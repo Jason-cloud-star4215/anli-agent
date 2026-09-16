@@ -308,6 +308,9 @@ class Orchestrator:
             if requests:
                 record.extra["evidence_request"] = [asdict(item) for item in requests]
             record.extra["llm_calls"] = getattr(self.llm, "calls", 0) if self.llm else 0
+            record.extra["llm_failures"] = (
+                getattr(self.llm, "failures", 0) if self.llm else 0
+            )
             record.extra["intake_source"] = profile.intake_source
 
             record.artifacts = self._build_artifacts(
@@ -761,8 +764,8 @@ class Orchestrator:
                     body="\n".join(
                         [
                             f"{labels[0]}：{assessment.expectation:.0f} 元",
-                            f"{labels[1]}：{assessment.legal_cap:.0f} 元",
-                            f"同类案例区间：{format_range(assessment.case_low, assessment.case_high)} 元"
+                            f"{labels[1]}：约 {assessment.legal_cap:.0f} 元",
+                            f"同类案例区间：约 {format_range(assessment.case_low, assessment.case_high)} 元"
                             f"（中位数 {_fmt(assessment.case_median)} 元，样本 {assessment.sample_size} 件）",
                             region_line,
                             "样本构成：" + assessment.sample_note,
@@ -771,8 +774,10 @@ class Orchestrator:
                                 if assessment.has_synthetic
                                 else "样本性质：真实来源案例"
                             ),
-                            f"{labels[2]}：{format_range(assessment.likely_low, assessment.likely_high)} 元",
+                            f"{labels[2]}：约 {format_range(assessment.likely_low, assessment.likely_high)} 元",
                             f"结论：{labels[0]}{feasible}",
+                            "金额口径：以上除「期望 / 主张 / 标的」外的数字都是按现有材料的估算约数，"
+                            "实际结果取决于证据与裁判。",
                             "差距原因：" + ("；".join(assessment.gap_reasons) or "无"),
                             "提升路径：" + ("；".join(assessment.uplift_paths) or "无"),
                         ]
@@ -895,14 +900,16 @@ class Orchestrator:
             counted = sum(item.counted for item in findings_list if item.status == "supported")
             calc_lines += [
                 "",
-                f"合计可认定：{counted:.0f} 元",
-                f"再乘以责任比例 {profile.responsibility_ratio:.0%}，得到可支持金额。",
+                f"合计可认定：约 {counted:.0f} 元",
+                f"再乘以责任比例 {profile.responsibility_ratio:.0%}，得到可支持金额（约数）。",
                 "",
                 "计算方式说明：",
                 "· 按逐项认定逻辑计算，有凭证的按凭证金额认定，不因证据不足而给主张金额打折；",
                 "· 事实存在但缺凭证、且法律规定了计算标准的，按法定标准计算，并列出所需参数；",
                 "· 既无证据又无法定标准的项目，按不予支持处理（归零），而不是按比例折算；",
                 "· 金额由确定性规则计算，不由大模型生成，保证可复现、可解释。",
+                "· 结论里的金额均为按现有材料估算的约数（已用「约」标注），"
+                "最终以证据和裁判认定为准。",
             ]
             artifacts.append(
                 Artifact(

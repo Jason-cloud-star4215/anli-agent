@@ -79,10 +79,12 @@ class LLMClient:
     ) -> None:
         config = get_config()
         self.base_url = (base_url or config["base_url"]).rstrip("/")
-        self.api_key = api_key or config["api_key"]
+        # 显式传空串表示「就是没有密钥」，只有传 None 才回落到配置文件
+        self.api_key = config["api_key"] if api_key is None else api_key
         self.model = model or config["model"]
         self.timeout = timeout
         self.calls = 0
+        self.failures = 0
 
     @property
     def available(self) -> bool:
@@ -150,8 +152,11 @@ class LLMClient:
                     system, user, temperature=temperature, max_tokens=max_tokens
                 )
                 return extract_json(text)
-            except LLMError as exc:
+            except (LLMError, ValueError) as exc:
+                # JSON 被截断或格式不对时也要重试：
+                # 只捕获 LLMError 会让「最后一个 } 被截掉」直接掉进规则版兜底
                 last_error = exc
+        self.failures += 1
         raise LLMError(f"无法解析模型返回的 JSON：{last_error}")
 
 

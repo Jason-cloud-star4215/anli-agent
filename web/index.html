@@ -144,6 +144,13 @@
   .reveal-line { margin: 0; }
   .reveal-line + .reveal-line { margin-top: 4px; }
 
+  /* 结果区卡片：从下往上浮现，别整块弹出来 */
+  .reveal-up { animation: revealUp .42s cubic-bezier(.22, .61, .36, 1) both; }
+  @keyframes revealUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
   .stat {
     border-radius: var(--radius); background: var(--surface-soft);
     padding: var(--space-3) 14px; height: 100%;
@@ -694,7 +701,8 @@
   // 过程流：事件先入队，再按固定节奏一条条铺出来，避免一屏刷完看不出过程
   var STREAM_INTERVAL = 240;   // 相邻两条之间的最短间隔（毫秒）
   var STREAM_TYPE_MS = 10;     // 打字机速度
-  var STREAM_TYPE_MAX = 420;   // 单条最长打字时间
+  var STREAM_TYPE_MAX = 520;   // 单条最长打字时间
+  var STREAM_BACKLOG = 24;     // 积压超过这么多条才放弃打字（辩论要点一轮 6–8 条，不能因此被跳过）
   var streamQueue = [];
   var streamBusy = false;
   var streamTimer = null;
@@ -805,8 +813,8 @@
     var row = renderStreamEntry(entry);
     var textEl = row.querySelector(".stream-text");
     var full = entry.text || "";
-    // 事件积压时不逐字打字，直接铺满，避免画面落后于真实进度
-    var instant = streamQueue.length > 8 || full.length > 90;
+    // 只有在极端积压时才放弃打字：阈值设得太低会把「辩论要点」整段变成闪现
+    var instant = streamQueue.length > STREAM_BACKLOG;
     typeText(textEl, full, instant, function () {
       streamBusy = false;
       streamTimer = setTimeout(pumpStream, STREAM_INTERVAL);
@@ -946,6 +954,24 @@
     $("stageLabel").textContent = text || (state ? (STAGE_LABEL[state] || state) : "未开始");
   }
 
+  // 让卡片「滑上来」而不是硬弹出来；重复调用时会重启动画
+  function revealCard(element, delay) {
+    if (!element || element.classList.contains("d-none")) { return; }
+    element.classList.remove("reveal-up");
+    void element.offsetWidth; // 强制重排，动画才会重放
+    element.classList.add("reveal-up");
+    element.style.animationDelay = (delay || 0) + "ms";
+  }
+
+  // 列表项逐条浮现
+  function staggerItems(container, step) {
+    if (!container) { return; }
+    Array.prototype.slice.call(container.children).forEach(function (child, index) {
+      child.classList.add("reveal-up");
+      child.style.animationDelay = (index * (step || 60)) + "ms";
+    });
+  }
+
   function setState(key) {
     var info = STATE_TEXT[key] || ["未开始", "text-bg-secondary"];
     var badge = $("stateBadge");
@@ -977,7 +1003,7 @@
   function rangeText(low, high) {
     if (low === null || low === undefined || high === null || high === undefined) { return "无数据"; }
     if (Math.round(low) === Math.round(high)) { return "约 " + money(low) + " 元"; }
-    return money(low) + " – " + money(high) + " 元";
+    return "约 " + money(low) + " – " + money(high) + " 元";
   }
 
   function readFiles(fileList) {
@@ -1126,8 +1152,8 @@
     statRow.innerHTML = "";
     if (a) {
       var cards = [
-        [labels[0], money(a.expectation) + " 元", ""],
-        [labels[1], money(a.legal_cap) + " 元", ""],
+        [labels[0], money(a.expectation) + " 元", "用户自己提出的数额"],
+        [labels[1], "约 " + money(a.legal_cap) + " 元", "按现有材料的估算口径"],
         [labels[2], rangeText(a.likely_low, a.likely_high),
           "同类中位数 " + money(a.case_median) + " 元 · " + (a.sample_note || ("样本 " + a.sample_size + " 件"))]
       ];
@@ -1143,7 +1169,9 @@
     }
     $("metaLine").textContent = "适用地区：" + ((data.understanding && data.understanding.region) || regionValue())
       + " · 案情理解方式：" + (data.intake_source === "llm" ? "大模型抽取" : "规则抽取")
-      + " · 模型调用 " + (data.llm_calls || 0) + " 次 · 证据充分度 "
+      + " · 模型调用 " + (data.llm_calls || 0) + " 次"
+      + (data.llm_failures ? "（失败 " + data.llm_failures + " 次）" : "")
+      + " · 证据充分度 "
       + (typeof data.evidence_sufficiency === "number"
         ? Math.round(data.evidence_sufficiency * 100) + "%" : "—");
 
@@ -1154,6 +1182,15 @@
     renderCitations(data.citations || []);
     renderFindings(data.findings || []);
     renderReport(data.report || "");
+    // 卡片依次滑上来，替代原来「同时弹出来」的观感
+    revealCard($("humanCard"), 0);
+    revealCard($("summaryCard"), 60);
+    revealCard($("evidenceCard"), 140);
+    revealCard($("strategyCard"), 220);
+    revealCard($("reportCard"), 300);
+    staggerItems($("evidenceList"), 70);
+    staggerItems($("strategyList"), 70);
+    staggerItems($("officialCases"), 60);
   }
 
   // 演示数据必须写在结论卡里，而不是只躲在附录

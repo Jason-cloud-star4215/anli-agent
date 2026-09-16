@@ -104,6 +104,7 @@ def build_view(record, report: str = "", error: str = "") -> dict:
         "llm_status": record.extra.get("llm_status", "") if record else "",
         "llm_status_text": record.extra.get("llm_status_text", "") if record else "",
         "llm_calls": record.extra.get("llm_calls", 0) if record else 0,
+        "llm_failures": record.extra.get("llm_failures", 0) if record else 0,
         "report": report,
         "findings": [asdict(item) for item in record.findings] if record else [],
         "citations": [asdict(item) for item in record.citations] if record else [],
@@ -220,6 +221,7 @@ def _run_task(
         )
         # 记录这次到底是「大模型版」「规则版」还是「配置了但没调通」
         calls = int(record.extra.get("llm_calls") or 0)
+        failures = int(record.extra.get("llm_failures") or 0)
         if llm is None:
             record.extra["llm_status"] = "offline"
             record.extra["llm_status_text"] = (
@@ -231,6 +233,12 @@ def _run_task(
             record.extra["llm_status_text"] = (
                 "大模型调用全部失败，已自动退回规则版分析；"
                 "请检查密钥、网络或模型名"
+            )
+        elif failures:
+            record.extra["llm_status"] = "degraded"
+            record.extra["llm_status_text"] = (
+                f"大模型有 {failures} 次调用失败，相关环节已退回规则版；"
+                f"其余 {calls} 次调用正常"
             )
         else:
             record.extra["llm_status"] = "online"

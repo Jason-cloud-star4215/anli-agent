@@ -344,18 +344,67 @@ class ResearcherAgent(BaseAgent):
         return checks
 
 
+# 两套完全不同的办案思路：原告想的是「怎么把能拿的拿到」，
+# 被告想的是「怎么把该给的不给」。共用一套机制，但目标、清单、禁区都不一样。
+STANCE_PLAYBOOK: dict[Role, dict[str, object]] = {
+    Role.CLAIMANT: {
+        "title": "原告 / 主张方",
+        "system": (
+            "你是原告方的代理律师，负责把委托人的损失做实、把能主张的都要到位。"
+            "只能引用给定法条，不得编造法条、案号或金额；不得承诺胜诉或具体赔偿结果。"
+        ),
+        "goal": (
+            "目标：把损失做实、把可主张的项目找全、把责任比例与赔偿基数顶到法律允许的上限，"
+            "并规划举证顺序与谈判锚点。"
+        ),
+        "sections": ["可主张项目", "举证顺序", "责任比例", "谈判锚点"],
+        "must": [
+            "逐项列出可以主张的赔偿项目：每一项给法律依据（条号）+ 计算口径 + 现有材料能支撑多少",
+            "缺证据的项目要写成「补什么材料就能主张、大概能拿多少」，而不是「主张不成立」",
+            "按「先补哪一项最划算」给出举证顺序（影响金额大的排前面）",
+            "预判对方会拿责任比例、必要性、因果关系做文章，给出你的应对说法",
+            "给出协商与诉讼的锚点金额、让步空间与最低可接受线",
+        ],
+        "forbidden": [
+            "不要替对方论证，也不要主动否定自己可主张的项目",
+            "不要把「对方可能抗辩的点」写成结论，要写成预案",
+        ],
+    },
+    Role.DEFENDANT: {
+        "title": "被告 / 抗辩方",
+        "system": (
+            "你是被告方的代理律师，负责逐项打掉对方主张中站不住的部分。"
+            "只能引用给定法条，不得编造法条、案号或金额；不得承诺判决结果。"
+        ),
+        "goal": (
+            "目标：逐项质证对方证据与法律适用，压低责任比例与赔偿基数，"
+            "说清自己最坏大概赔多少、以及和解区间在哪。"
+        ),
+        "sections": ["质证要点", "举证责任", "责任比例", "和解区间"],
+        "must": [
+            "逐项质证：对方每一项主张的证据是否真实、合法、与本案有关联，不认可的要说明理由",
+            "指出哪些项目的举证责任在对方，以及举证不能的后果",
+            "核对责任比例认定，指出可主张减轻责任的事实与依据（如认定书可复核、对方也有过错）",
+            "给出自己可以接受的赔付上限与和解方案，并说明为什么这个数合适",
+        ],
+        "forbidden": [
+            "不要替对方补强证据，也不要默认认可对方未证明的部分",
+            "不要只说「对方没证据」，还要说明自己该准备什么材料",
+        ],
+    },
+}
+
+
 class AdvocacyAgent(BaseAgent):
-    """主张方 / 抗辩方，共用同一套机制，只是立场不同。"""
+    """主张方 / 抗辩方：同一套机制，两套完全不同的办案思路。"""
 
     def __init__(self, stance: Role, **kwargs) -> None:
         super().__init__(**kwargs)
         self.role = stance
-        if stance == Role.CLAIMANT:
-            self.display_name = "主张方"
-            self.system_prompt = "你站在主张方立场，基于已核验的法条与类案组织诉求。"
-        else:
-            self.display_name = "抗辩方"
-            self.system_prompt = "你站在抗辩方立场，指出对方证据与法律适用的漏洞。"
+        playbook = STANCE_PLAYBOOK[stance]
+        self.display_name = "主张方" if stance == Role.CLAIMANT else "抗辩方"
+        self.playbook = playbook
+        self.system_prompt = str(playbook["system"])
 
     def act(self, context: AgentContext) -> AgentResult:
         profile = context.profile
@@ -379,16 +428,42 @@ class AdvocacyAgent(BaseAgent):
 
         profile = context.profile
         bullets: list[str] = []
+        laws = "、".join(item.label for item in provisions[:3]) or "暂无法条"
+        cap = context.legal_cap * profile.responsibility_ratio
+        missing = "、".join(profile.missing_evidence) or "无"
         if self.role == Role.CLAIMANT:
-            bullets.append(f"主张按 {profile.cause} 主张赔偿，合计 {context.legal_cap:.0f} 元")
-            bullets += [f"依据 {item.label}" for item in provisions[:3]]
-            bullets.append("需要补强的证据：" + ("、".join(profile.missing_evidence) or "无"))
-        else:
-            bullets.append("抗辩点一：对方部分诉求缺少证据支撑")
-            for item in profile.missing_evidence:
-                bullets.append(f"抗辩点：{item} 尚未提供，不能直接计入损失")
             bullets.append(
-                f"抗辩点二：责任比例应按 {profile.responsibility_ratio:.0%} 计算，超出部分不应支持"
+                f"【可主张项目】按 {profile.cause} 逐项主张，现有材料能支撑的合计约 "
+                f"{context.legal_cap:.0f} 元；可援引 {laws}"
+            )
+            bullets.append(
+                f"【举证顺序】先补影响金额最大的项目：{missing}；"
+                "其余项目按「金额 × 补齐难度」依次补"
+            )
+            bullets.append(
+                f"【责任比例】按目前认定按 {profile.responsibility_ratio:.0%} 主张，"
+                f"对应约 {cap:.0f} 元；若对方主张你方有过错，用现有认定材料反驳"
+            )
+            bullets.append(
+                f"【谈判锚点】以约 {cap:.0f} 元为底线、{context.expectation:.0f} 元为起点协商，"
+                "证据补齐后再调整口径"
+            )
+        else:
+            bullets.append(
+                f"【质证要点】对方主张的项目中，{missing} 尚未提供对应证据，"
+                "不能仅凭陈述计入损失"
+            )
+            bullets.append(
+                "【举证责任】上述项目的举证责任在对方，拿不出证据的后果由对方承担；"
+                "可要求对方出示原件并说明来源"
+            )
+            bullets.append(
+                f"【责任比例】应按 {profile.responsibility_ratio:.0%} 计算，"
+                "超出部分不应支持；认为认定有误时在复核期内申请复核"
+            )
+            bullets.append(
+                f"【和解区间】以约 {cap:.0f} 元为可接受上限谈和解，"
+                f"对方主张的 {context.expectation:.0f} 元超出部分缺乏依据"
             )
         return AgentResult(
             agent=self.role.value,
@@ -399,45 +474,88 @@ class AdvocacyAgent(BaseAgent):
 
     def _llm_arguments(self, context: AgentContext, provisions) -> AgentResult | None:
         profile = context.profile
-        stance = "主张方（帮用户争取）" if self.role == Role.CLAIMANT else "抗辩方（指出对方主张的漏洞）"
+        playbook = self.playbook
+        sections = "、".join(str(item) for item in playbook["sections"])
+        must = "\n".join(f"- {item}" for item in playbook["must"])
+        forbidden = "\n".join(f"- {item}" for item in playbook["forbidden"])
         law_text = "\n".join(
             f"- {item.label}：{item.text[:120]}" for item in provisions[:4]
         ) or "（本次未检索到可用法条）"
+        amount_label = (
+            f"我方主张金额（用户期望）：{context.expectation:.0f} 元"
+            if self.role == Role.CLAIMANT
+            else f"对方主张金额：{context.expectation:.0f} 元"
+        )
         extra_block = ""
         if context.extra.get("revision_summary"):
             extra_block = (
                 "\n对方本轮修订说明：" + str(context.extra["revision_summary"])[:400]
-                + "\n这是第二轮：请针对对方修订后的说法再次反驳，只讲仍然站不住的部分，"
-                "并说明哪些原来被指出的问题对方已经补救。\n"
+                + "\n这是第二轮对抗：请针对对方修订后的说法再打一轮，"
+                "只讲仍然站不住的部分，并说明哪些原来被指出的问题对方已经补救。\n"
             )
         user = (
-            f"你的立场：{stance}\n"
+            f"你的身份：{playbook['title']}\n"
+            f"{playbook['goal']}\n"
             f"案由：{profile.cause}\n"
             f"用户原话：{profile.description or profile.summary}\n"
             f"责任比例：{profile.responsibility_ratio:.0%}\n"
             f"现有证据：{'、'.join(profile.available_evidence) or '无'}\n"
             f"缺失证据：{'、'.join(profile.missing_evidence) or '无'}\n"
-            f"可支持金额：{context.legal_cap:.0f} 元\n"
+            f"按现有材料可支持的金额（估算，用「约」表述）：约 {context.legal_cap:.0f} 元\n"
+            f"{amount_label}\n"
             f"可用法条：\n{law_text}\n\n"
+            f"必须覆盖这几个方面，每条要点用【方面】开头：{sections}\n"
+            f"{must}\n"
+            f"禁止：\n{forbidden}\n"
+            "金额一律用「约 X 元」的估算口径，不要写成确定结论；不得承诺胜诉。\n"
             f"{extra_block}"
-            '输出 JSON：{"summary": "一句话结论", "bullets": ["要点1", "要点2"]}'
+            '输出 JSON：{"summary": "一句话结论（站在本立场）", '
+            '"bullets": ["【方面】要点1", "【方面】要点2"]}'
         )
         payload = self.ask_json(
-            "你是法律实务助手，站在指定立场组织论证。"
-            "只能引用给定法条，不得编造法条、案号或金额。要点要具体、可执行。",
+            str(playbook["system"]),
             user,
+            max_tokens=1800,
         )
         if not payload:
             return None
         bullets = [str(item) for item in (payload.get("bullets") or [])][:8]
         if not bullets:
             return None
+        bullets = self._ensure_sections(context, provisions, bullets)
         return AgentResult(
             agent=self.role.value,
             status="completed",
             summary=str(payload.get("summary") or f"{self.display_name}论证完成"),
             bullets=bullets,
         )
+
+    def _ensure_sections(
+        self, context: AgentContext, provisions, bullets: list[str]
+    ) -> list[str]:
+        """保证四个视角都写到：模型漏掉的方面，用规则版那条补上。
+
+        实测过模型会连写六条「可主张项目」而完全不提举证顺序与谈判锚点，
+        只靠提示词约束不住，所以这里做一次确定性兜底。
+        """
+
+        required = [str(item) for item in self.playbook["sections"]]
+        covered = {
+            section for section in required if any(section in bullet for bullet in bullets)
+        }
+        missing = [section for section in required if section not in covered]
+        if not missing:
+            return bullets
+        for bullet in self._rule_arguments(context, provisions).bullets:
+            label = ""
+            if bullet.startswith("【") and "】" in bullet:
+                label = bullet[1 : bullet.index("】")]
+            if label in missing:
+                bullets.append(bullet)
+                missing.remove(label)
+            if not missing:
+                break
+        return bullets
 
 
 class JudgeAgent(BaseAgent):

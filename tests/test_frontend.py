@@ -153,6 +153,25 @@ class FrontendTest(unittest.TestCase):
         self.assertIn("ev-ok", self.html)
         self.assertIn("quality: quality", self.html)
 
+    def test_process_stream_does_not_skip_typing_too_early(self):
+        """积压阈值太低会把「辩论要点」整段变成闪现（曾经的 8 条阈值）。"""
+
+        self.assertIn("STREAM_BACKLOG", self.html)
+        self.assertIn("var STREAM_BACKLOG = 24", self.html)
+
+    def test_result_cards_reveal_instead_of_popping(self):
+        """结果区卡片要有依次浮现的动画，不能整块弹出来。"""
+
+        self.assertIn("reveal-up", self.html)
+        self.assertIn("revealCard", self.html)
+        self.assertIn("staggerItems", self.html)
+
+    def test_amounts_are_hedged_with_approx(self):
+        """金额卡要用「约」的估算口径。"""
+
+        self.assertIn('"约 " + money(a.legal_cap)', self.html)
+        self.assertIn('return "约 " + money(low)', self.html)
+
 
 if __name__ == "__main__":
     unittest.main()

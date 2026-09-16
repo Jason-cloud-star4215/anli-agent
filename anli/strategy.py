@@ -24,6 +24,12 @@ def format_range(low: float | None, high: float | None) -> str:
     return f"{low:.0f}–{high:.0f}"
 
 
+def approx(value: float | None) -> str:
+    """金额一律用估算口径：赔偿金额本身不确定，不写成确定结论。"""
+
+    return "无数据" if value is None else f"约 {value:.0f} 元"
+
+
 @dataclass
 class Strategy:
     priority: str  # P0 立刻做 / P1 建议做 / P2 视情况
@@ -411,15 +417,16 @@ def render_summary(
                 conclusion = "对方的主张基本在合理区间内，抗辩空间有限"
             numbers = (
                 f"对方主张 {assessment.expectation:.0f} 元，按现有证据与责任比例，"
-                f"可能被支持的约 {assessment.legal_cap:.0f} 元；同类案例通常判 {case_text} 元"
+                f"可能被支持的{approx(assessment.legal_cap)}；同类案例通常判约 {case_text} 元"
                 f"（中位数 {assessment.case_median:.0f} 元，样本 {assessment.sample_size} 件），"
-                f"你的合理赔付预期{likely_text} 元。"
+                f"你的合理赔付预期约 {likely_text} 元。"
             )
         elif role == Role.JUDGE:
             conclusion = "本案事实与证据的争点已经比较清楚"
             numbers = (
-                f"标的 {assessment.expectation:.0f} 元，按现有证据可支持 {assessment.legal_cap:.0f} 元；"
-                f"同类案例通常判 {case_text} 元（中位数 {assessment.case_median:.0f} 元，"
+                f"标的 {assessment.expectation:.0f} 元，按现有证据可支持"
+                f"{approx(assessment.legal_cap)}；"
+                f"同类案例通常判约 {case_text} 元（中位数 {assessment.case_median:.0f} 元，"
                 f"样本 {assessment.sample_size} 件），合理裁判区间{likely_text} 元。"
             )
         else:
@@ -430,16 +437,17 @@ def render_summary(
             if assessment.legal_cap <= 0:
                 numbers = (
                     f"你提出 {assessment.expectation:.0f} 元，但目前每一项都没有材料支撑，"
-                    f"按证据规则可支持金额为 0 元；同类案件在证据齐备时通常判 {case_text} 元"
+                    f"按证据规则可支持金额约为 0 元；同类案件在证据齐备时通常判约 {case_text} 元"
                     f"（中位数 {assessment.case_median:.0f} 元，样本 {assessment.sample_size} 件），"
                     "也就是说差距出在材料，不在诉求本身。"
                 )
             else:
                 numbers = (
-                    f"你提出 {assessment.expectation:.0f} 元，按现有证据可支持 {assessment.legal_cap:.0f} 元；"
-                    f"同类案件在证据齐备时通常判 {case_text} 元（中位数 {assessment.case_median:.0f} 元，"
+                    f"你提出 {assessment.expectation:.0f} 元，按现有证据可支持"
+                    f"{approx(assessment.legal_cap)}；"
+                    f"同类案件在证据齐备时通常判约 {case_text} 元（中位数 {assessment.case_median:.0f} 元，"
                     f"样本 {assessment.sample_size} 件），受你的证据和责任比例限制，"
-                    f"最可能落点{likely_text} 元。"
+                    f"最可能落点约 {likely_text} 元。"
                 )
 
     gap_lines = []
@@ -463,6 +471,11 @@ def render_summary(
             f"其中 {assessment.cross_region_sample_size} 件来自其他省份，"
             "各地裁判尺度存在差异，跨省区间只能作弱参照。"
         )
+    # 金额口径：赔偿金额本身不确定，结论里的数字一律按约数呈现
+    extra_lines.append(
+        "金额口径：可支持金额、类案区间、最可能落点均为按现有材料估算的约数"
+        "（已用「约」标注），实际结果取决于证据与裁判。"
+    )
     cap_if_full = potential_cap(profile) * profile.responsibility_ratio
     if cap_if_full > assessment.legal_cap + 1:
         extra_lines.append(
