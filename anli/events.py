@@ -22,6 +22,7 @@ EVENT_TYPES = (
     "agent_started",
     "agent_delta",
     "agent_message",
+    "llm_state",
     "round_started",
     "critic_finding",
     "evidence_requested",

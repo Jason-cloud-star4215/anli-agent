@@ -525,6 +525,12 @@ def render_summary(
             f"按你目前手上有的材料，可支持约 {assessment.legal_cap:.0f} 元。"
         )
     waived = (profile.extra or {}).get("waived_evidence") or []
+    if (profile.extra or {}).get("waive_all"):
+        extra_lines.append(
+            "你已说明这些材料暂时拿不出来，下面按现有材料给结论："
+            "未计入的项目不是放弃主张，而是目前证据不支持；"
+            "日后补齐材料可以重新评估。"
+        )
     if waived:
         extra_lines.append(
             "你已说明这些材料暂时拿不出来：" + "、".join(waived)

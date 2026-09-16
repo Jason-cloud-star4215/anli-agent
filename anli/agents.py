@@ -59,18 +59,50 @@ class BaseAgent:
         self.bus = bus
         self.budget = budget
         self.llm = llm
+        self._llm_ok_reported = False
+        self._task_id = ""
 
     def ask_json(self, system: str, user: str, max_tokens: int = 900) -> dict | None:
         """调用大模型并解析 JSON；不可用时返回 None，由调用方退回规则逻辑。"""
 
         if self.llm is None or not getattr(self.llm, "available", False):
             return None
+        failures_before = getattr(self.llm, "failures", 0)
         try:
-            return self.llm.chat_json(system, user, max_tokens=max_tokens)
+            payload = self.llm.chat_json(system, user, max_tokens=max_tokens)
         except Exception:  # noqa: BLE001
-            return None
+            payload = None
+        self._report_llm_state(payload, failures_before)
+        return payload
+
+    def _report_llm_state(self, payload, failures_before: int) -> None:
+        """模型一有结果就推一次状态：成功只报一次，失败每次都报。
+
+        这样前端不会等整个任务跑完才知道「模型到底通没通」。
+        """
+
+        failures = getattr(self.llm, "failures", 0)
+        calls = getattr(self.llm, "calls", 0)
+        if failures > failures_before:
+            self.bus.emit(
+                "llm_state",
+                "",
+                {
+                    "status": "degraded",
+                    "text": f"大模型第 {failures} 次调用失败，该环节已退回规则版",
+                },
+            )
+            return
+        if payload and not self._llm_ok_reported:
+            self._llm_ok_reported = True
+            self.bus.emit(
+                "llm_state",
+                "",
+                {"status": "online", "text": f"大模型调用正常（已调用 {calls} 次）"},
+            )
 
     def run(self, context: AgentContext) -> AgentResult:
+        self._task_id = context.task_id
         self.bus.emit(
             "agent_started",
             context.task_id,

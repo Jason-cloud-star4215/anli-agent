@@ -145,6 +145,11 @@ def build_evidence_requests(
 ) -> list[EvidenceRequest]:
     """按影响金额从大到小，列出需要补充的证据；措辞随身份变化。"""
 
+    # 用户已经明确「这些材料拿不出来，就按现有情况给结论」：
+    # 不再列补证清单，直接把流程放行到交付（结论里会写明哪些项目因此未计入）。
+    if (profile.extra or {}).get("waive_all"):
+        return []
+
     requests: list[EvidenceRequest] = []
 
     for item, info in (profile.blocked_items or {}).items():

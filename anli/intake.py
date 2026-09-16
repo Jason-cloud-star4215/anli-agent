@@ -261,6 +261,7 @@ def build_profile(
     confirmed_evidence: list[str] | None = None,
     waived_evidence: list[str] | None = None,
     quality_answers: dict[str, list[str]] | None = None,
+    waive_all: bool = False,
 ) -> CaseProfile:
     """把用户原话与上传材料转成结构化案情。"""
 
@@ -322,6 +323,10 @@ def build_profile(
             "sufficiency": sufficiency(item_findings),
             # 该案由是否适用责任比例（消费维权、劳动争议不适用）
             "responsibility_applies": responsibility_applies(cause),
+            # 用户明确表示「材料拿不出来，就按现有情况给结论」：
+            # 这类参数（误工天数、当地工资标准等）不是证据名称，无法逐个 waive，
+            # 只能用这个开关整体放行，否则补证清单永远消不掉。
+            "waive_all": bool(waive_all),
         },
         claim_items=supported,
         blocked_items=blocked,

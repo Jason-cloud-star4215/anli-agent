@@ -714,6 +714,8 @@
 
   var role = "claimant";
   var MODEL_NAME = "";
+  // /api/health 带回来的配置层状态；开跑时用它决定徽章该显示「分析中」还是「未连接」
+  var HEALTH = { status: "", text: "", configured: false, disabled: false };
   var lastSampleKey = null;
   var sampleConfirmed = [];
   var sampleDesc = "";
@@ -1116,6 +1118,7 @@
       return;
     }
     setRunning(true);
+    setModelBadgeForRunStart();
     $("guideCard").classList.add("d-none");
     resetStream();
     // 开新任务时先清掉上一次的掉线横幅，等本次跑完再按本次结果重设
@@ -1324,6 +1327,7 @@
       online: ["text-bg-success", "大模型已连接" + (MODEL_NAME ? " · " + MODEL_NAME : "")],
       configured: ["text-bg-secondary", "大模型已配置 · 待运行验证"],
       skipped: ["text-bg-secondary", "大模型已配置（本次未调用）"],
+      running: ["text-bg-secondary", "大模型已配置 · 本次分析中…"],
       degraded: ["text-bg-danger", "大模型调用失败 · 已退回规则版"],
       offline: ["text-bg-danger", "大模型未连接 · 规则版"]
     };
@@ -1339,6 +1343,17 @@
     } else {
       notice.classList.add("d-none");
     }
+  }
+
+  // 开跑/补交/确认的瞬间：徽章先切到「本次分析中」，不要留着上一条任务的结果
+  function setModelBadgeForRunStart() {
+    var notice = $("offlineNotice");
+    notice.classList.add("d-none");
+    if (HEALTH.status === "offline") {
+      setModelBadge("offline", HEALTH.text || "", true);
+      return;
+    }
+    setModelBadge("running", "", true);
   }
 
   // 证据闸门：证据不充分时不把估算数字当结论摆出来
@@ -1438,6 +1453,7 @@
         $("humanCard").classList.add("d-none");
         resetStream();
         setState("RUNNING");
+        setModelBadgeForRunStart();
         attachStream();
       })
       .catch(function (err) {
@@ -1882,6 +1898,7 @@
     }).then(function () {
       resetStream();
       setState("RUNNING");
+        setModelBadgeForRunStart();
       attachStream();
     }).catch(function (err) {
       showError("补交失败：" + err.message);
@@ -1904,6 +1921,7 @@
     }).then(function () {
       resetStream();
       setState("RUNNING");
+        setModelBadgeForRunStart();
       attachStream();
     }).catch(function (err) {
       showError("操作失败：" + err.message);
@@ -1922,13 +1940,18 @@
     .then(function (res) { return res.json(); })
     .then(function (data) {
       MODEL_NAME = data.model || "";
+      HEALTH = {
+        status: data.status || (data.llm ? "configured" : "offline"),
+        text: (data.last_run && data.last_run.text) || "",
+        configured: !!data.configured,
+        disabled: !!data.disabled
+      };
       // 版本徽章：用来区分「页面是新的还是旧的缓存」
       var versionBadge = $("versionBadge");
       versionBadge.textContent = "v" + (data.version || "?");
       versionBadge.title = "页面与服务端版本号；两边不一致说明浏览器用的是旧页面，按 Ctrl+F5 强制刷新";
       // 状态以「最近一次真实运行」优先：密钥配着但调用失败时，不能显示「已连接」
-      var lastText = (data.last_run && data.last_run.text) || "";
-      setModelBadge(data.status || (data.llm ? "configured" : "offline"), lastText, true);
+      setModelBadge(HEALTH.status, HEALTH.text, true);
     })
     .catch(function () { /* 状态未知时保持默认文案 */ });
 

@@ -83,6 +83,7 @@ def profile_from_payload(
     confirmed_evidence: list[str] | None = None,
     waived_evidence: list[str] | None = None,
     quality_answers: dict[str, list[str]] | None = None,
+    waive_all: bool = False,
 ) -> CaseProfile:
     """把模型输出落回受控结构；越界字段直接丢弃。"""
 
@@ -194,6 +195,7 @@ def profile_from_payload(
             "quality_answers": dict(quality_answers or {}),
             "sufficiency": sufficiency(item_findings),
             "responsibility_applies": responsibility_applies(cause),
+            "waive_all": bool(waive_all),
         },
     )
 
@@ -206,6 +208,7 @@ def build_profile_llm(
     confirmed_evidence: list[str] | None = None,
     waived_evidence: list[str] | None = None,
     quality_answers: dict[str, list[str]] | None = None,
+    waive_all: bool = False,
 ) -> CaseProfile:
     """优先用大模型理解案情，失败则退回规则抽取。"""
 
@@ -218,6 +221,7 @@ def build_profile_llm(
             confirmed_evidence,
             waived_evidence,
             quality_answers,
+            waive_all=waive_all,
         )
     try:
         payload = llm.chat_json(_system_prompt(), build_prompt(description, file_names))
@@ -229,6 +233,7 @@ def build_profile_llm(
             confirmed_evidence,
             waived_evidence,
             quality_answers,
+            waive_all=waive_all,
         )
     except Exception:  # noqa: BLE001 - 模型不可用时不能拖垮主流程
         return build_profile(
@@ -238,4 +243,5 @@ def build_profile_llm(
             confirmed_evidence,
             waived_evidence,
             quality_answers,
+            waive_all=waive_all,
         )

@@ -277,6 +277,7 @@ def _run_task(
     region: str = DEFAULT_REGION,
     approved: bool = False,
     request: dict | None = None,
+    waive_all: bool = False,
 ) -> None:
     events: queue.Queue = TASKS[task_id]["events"]
 
@@ -298,6 +299,7 @@ def _run_task(
             confirmed_evidence=confirmed_evidence or [],
             waived_evidence=waived_evidence or [],
             quality_answers=quality_answers or {},
+            waive_all=waive_all,
         )
         if not expectation:
             expectation = profile.extra.get("expectation") or extract_expectation(description)
@@ -362,6 +364,7 @@ def _start_task(
     quality_answers: dict[str, list[str]] | None = None,
     region: str = DEFAULT_REGION,
     approved: bool = False,
+    waive_all: bool = False,
 ) -> None:
     """启动（或重启）一次分析，重置事件队列供前端重新订阅。"""
 
@@ -375,6 +378,7 @@ def _start_task(
         "expectation": expectation,
         "region": region or DEFAULT_REGION,
         "approved": bool(approved),
+        "waive_all": bool(waive_all),
         "confirmed_evidence": list(confirmed_evidence or []),
         "waived_evidence": list(waived_evidence or []),
         "quality_answers": {
@@ -410,6 +414,7 @@ def _start_task(
             region or DEFAULT_REGION,
             bool(approved),
             request,
+            bool(waive_all),
         ),
         daemon=True,
     ).start()
@@ -591,6 +596,7 @@ class Handler(BaseHTTPRequestHandler):
         request["quality_answers"] = merged_quality
         if payload.get("waive_all"):
             # 用户明确表示拿不出材料：把上次列出的缺口全部标记为「无法提供」
+            request["waive_all"] = True
             record = task.get("record")
             gaps: list[str] = []
             if record is not None:

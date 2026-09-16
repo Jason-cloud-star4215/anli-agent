@@ -96,6 +96,8 @@ class Orchestrator:
             if not profile.summary.strip():
                 self._stage(record, TaskState.CLARIFYING)
                 self._stage(record, TaskState.NEEDS_INFO)
+                self._snapshot_llm_usage(record)
+                self._emit_llm_state_on_stop(task_id, "没有收到案情描述")
                 return record
 
             self._stage(record, TaskState.CLARIFYING)
@@ -106,6 +108,8 @@ class Orchestrator:
             if scope is not None:
                 scope.legal_refs = self._out_of_scope_refs(scope)
                 body = scope.render()
+                self._snapshot_llm_usage(record)
+                self._emit_llm_state_on_stop(task_id, "判定超出覆盖范围")
                 record.extra["out_of_scope"] = {
                     "kind": scope.kind,
                     "matched": scope.matched,
@@ -138,6 +142,8 @@ class Orchestrator:
                     Artifact(kind="need_info", title="需要补充信息", body=message)
                 ]
                 self._stage(record, TaskState.NEEDS_INFO)
+                self._snapshot_llm_usage(record)
+                self._emit_llm_state_on_stop(task_id, "案情信息不足")
                 self.bus.emit(
                     "task_completed", task_id, {"artifacts": len(record.artifacts)}
                 )
@@ -165,6 +171,8 @@ class Orchestrator:
                     Artifact(kind="need_info", title="需要补充信息", body=message)
                 ]
                 self._stage(record, TaskState.NEEDS_INFO)
+                self._snapshot_llm_usage(record)
+                self._emit_llm_state_on_stop(task_id, "还没有识别到具体金额")
                 self.bus.emit(
                     "task_completed", task_id, {"artifacts": len(record.artifacts)}
                 )
@@ -634,6 +642,42 @@ class Orchestrator:
         record.state = transition(record.state, target)
         self.bus.emit("stage_changed", record.task_id, {"state": target.value})
         self._checkpoint(record)
+
+    # ------------------------------------------------------------------ 模型状态
+    def _snapshot_llm_usage(self, record: TaskRecord) -> None:
+        """把当前累计的模型调用/失败次数写进任务（早退分支也要写，否则会被当成「没调用」）。"""
+
+        record.extra["llm_calls"] = getattr(self.llm, "calls", 0) if self.llm else 0
+        record.extra["llm_failures"] = getattr(self.llm, "failures", 0) if self.llm else 0
+
+    def _emit_llm_state_on_stop(self, task_id: str, reason: str) -> None:
+        """流程在「调模型之前」结束时，立刻把真实状态推给前端。
+
+        注意：案情理解那一步可能已经调过模型（calls >= 1），
+        所以不能说「未调用」，要说清「只用于理解案情、后续未再调用」。
+        """
+
+        self.bus.emit("llm_state", task_id, self._stopped_llm_state(reason))
+
+    def _stopped_llm_state(self, reason: str) -> dict:
+        calls = getattr(self.llm, "calls", 0) if self.llm else 0
+        failures = getattr(self.llm, "failures", 0) if self.llm else 0
+        if self.llm is None:
+            return {"status": "offline", "text": "未配置大模型，本次为规则版流程"}
+        if failures and not calls:
+            return {
+                "status": "degraded",
+                "text": f"大模型 {failures} 次调用全部失败，已退回规则版",
+            }
+        if not calls:
+            return {
+                "status": "skipped",
+                "text": f"本次未调用大模型（{reason}）",
+            }
+        return {
+            "status": "intake_only",
+            "text": f"大模型仅用于理解案情（已调用 {calls} 次），{reason}后未再调用",
+        }
 
     def _checkpoint(self, record: TaskRecord) -> None:
         self.state_store.save(
