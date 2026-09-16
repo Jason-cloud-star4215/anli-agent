@@ -68,3 +68,33 @@
 - 上传材料目前只取文件名与勾选信息，尚未解析正文。
 - 「需按法定标准计算」的项目（误工费、护理费等）只给公式与所需参数，尚未内置各地工资标准等数据。
 - 任务检查点已落盘，但服务重启后还不能从检查点恢复（`StateStore.load` 待接入）。
+
+## 六、自动化录制 30 秒演示视频
+
+已录好的成片：`artifacts/demo-30s.mp4`（1600×814，30.0 秒，H.264）。
+它是用 `tools/record_demo.js` 走 Chrome DevTools Protocol 录的真实画面，
+过程流的节奏、打字机、结论摘要的滑出动画都是原速（仅按 1.2× 压缩到 30 秒，结尾定格 6 秒）。
+
+自己重录：
+
+```powershell
+# 1) 本机没有 ffmpeg：装一个自带二进制的包到临时目录（走清华镜像，不污染环境）
+python -m pip install --target "$env:TEMP\anli-ffmpeg-libs" `
+  --index-url https://pypi.tuna.tsinghua.edu.cn/simple imageio-ffmpeg
+$env:ANLI_FFMPEG = "$env:TEMP\anli-ffmpeg-libs\imageio_ffmpeg\binaries\ffmpeg-win-x86_64-v7.1.exe"
+
+# 2) 启动服务（带大模型，页头会显示「大模型已连接」）
+python -m anli.web
+
+# 3) 录制：录到「任务结束且结论卡渲染完成」再多录 6 秒，最后压到 30 秒
+node tools/record_demo.js --url "http://127.0.0.1:8765/?demo=car" `
+  --out artifacts/demo-30s --target 30 --hold 6
+```
+
+已踩过的坑（脚本里已处理，改脚本时别改回去）：
+
+- `concat` 解复用器会忽略最后一条 `duration`，定格时长会丢；因此改为按真实帧间隔
+  把帧**硬链接**成固定 25fps 序列，再用 `image2` 读，时长才可控。
+- 帧间隔不足一帧时不能简单 `max(1, round())`，否则每帧都被重复一次、总时长翻倍；
+  要用累积器把零头带到下一帧。
+- 结束条件不能只看状态徽章，还要等 `#summaryCard` 渲染出来，否则成片会停在「任务完成」那一步。

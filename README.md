@@ -89,6 +89,11 @@ python tools/fetch_cases.py --list-only     # 只看列表，不抓正文
 产物是 `data/cases.official.json`，每条都带案号、官方链接与抓取时间。
 刑事案件一律不入库；官方案例只做裁判要点参照，不参与金额区间计算。
 
+## 录制 30 秒演示视频
+
+成片在 `artifacts/demo-30s.mp4`。重录用 `tools/record_demo.js`（Chrome 真实画面 + ffmpeg 编码），
+命令与注意事项见 [DEMO_SCRIPT.md](./DEMO_SCRIPT.md) 第六节。
+
 **方式二：双击启动脚本（需要本机有 Python）**
 
 ```

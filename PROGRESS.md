@@ -515,3 +515,16 @@ Web 服务自检通过：页面返回 200，创建任务后状态为 DELIVERED�
 - 无头浏览器实测：过程流出现「第 2 轮」分隔提示、角色名显示为「质证复核 / 方案修订」、
   结论摘要逐行滑出、页头徽章与掉线提示按状态显示。
 - exe 重新打包并实测（含大模型路径：5 次调用、20 秒、报告 7240 字）。
+
+## 本轮补充：30 秒演示视频（2026-09-16）
+
+- 新增 `tools/record_demo.js`：用 Chrome DevTools Protocol 录真实画面（`Page.startScreencast`），
+  结束条件为「任务不再处于分析中 **且** 结论卡已渲染」，再定格 6 秒；用 ffmpeg 编码为 mp4。
+- 本机原本没有 ffmpeg，改用 `pip install --target <临时目录> imageio-ffmpeg`（清华镜像）取到
+  ffmpeg 7.1 二进制，**没有改动用户环境的 site-packages**。
+- 成片：`artifacts/demo-30s.mp4`，1600×814、30.04 秒、4.1 MB（含大模型版完整流程：
+  检索 → 官方库核对 → 两轮对抗与修订 → 13 份交付物 → 结论摘要与补证清单）。
+- 踩坑与修法已写进 `DEMO_SCRIPT.md` 第六节：concat 会忽略末条 duration、帧间隔不足一帧要累计、
+  结束条件必须等结论卡。
+- 注意：`artifacts/` 在 `.gitignore` 里，视频不进版本库；若要放进参赛压缩包，
+  需要在 `tools/pack.py` 的包含清单里加上它。
