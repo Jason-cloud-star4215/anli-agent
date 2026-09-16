@@ -1,0 +1,21 @@
+# 密钥与本地配置：绝不提交
+.env
+dist/.env
+
+# 运行与构建产物
+state/
+cases/
+artifacts/
+cache/
+build/
+dist/
+*.spec
+
+# Python
+__pycache__/
+*.py[cod]
+
+# 编辑器
+.vscode/
+.idea/
+.DS_Store

@@ -1,0 +1,9 @@
+[project]
+name = "anli-agent"
+version = "0.1.0"
+description = "案理 · 法律维权决策智能体（杭州智能体大赛参赛作品）"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.setuptools]
+packages = ["anli"]

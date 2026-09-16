@@ -1,0 +1,1752 @@
+<!doctype html>
+<!-- 源文件：样式用占位链接，构建时由 tools/build_web.py 内联成自包含的 index.html -->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>案理 · 法律维权决策智能体</title>
+<link rel="stylesheet" href="/vendor/bootstrap.min.css">
+<style>
+  :root {
+    --brand: #1f4e79; --brand-soft: #eaf1f8;
+    --ink: #1d2733; --ink-soft: #5a6a7a; --ink-mute: #8593a3;
+    --line: #e3e8ef; --line-soft: #eef2f7; --surface-soft: #f7f9fc;
+    --ok: #2c7a55; --warn: #d98b2b; --danger: #b23c3c;
+    --radius-sm: 8px; --radius: 10px; --radius-lg: 12px;
+    --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+    --mono: "SFMono-Regular", "JetBrains Mono", Consolas, ui-monospace, monospace;
+    --header-h: 72px;
+  }
+  body { font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; color: var(--ink); }
+  .brand-mark {
+    width: 44px; height: 44px; border-radius: 12px; background: var(--brand);
+    color: #fff; display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 1.05rem; letter-spacing: 1px;
+  }
+  .card {
+    border-color: var(--line); border-radius: var(--radius-lg);
+    box-shadow: 0 1px 2px rgba(16, 24, 40, .04);
+  }
+  .card-header {
+    background: #fff; border-bottom-color: var(--line-soft); font-weight: 600;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  }
+  .badge { font-weight: 600; letter-spacing: .2px; }
+  .form-text { color: var(--ink-mute); }
+  .form-label { color: var(--ink-soft); font-weight: 600; font-size: .8125rem; }
+  .app-header { height: var(--header-h); }
+
+  /* 桌面端：三栏各自独立滚动，页面本身不滚动 */
+  @media (min-width: 992px) {
+    body { overflow: hidden; }
+    .app-shell { height: calc(100vh - var(--header-h)); }
+    .app-shell > .row { height: 100%; }
+    .col-scroll {
+      height: 100%; overflow-y: auto; overflow-x: hidden;
+      padding-bottom: 12px; scrollbar-width: thin;
+    }
+    .col-scroll::-webkit-scrollbar { width: 8px; }
+    .col-scroll::-webkit-scrollbar-thumb {
+      background: #ccd6e0; border-radius: 4px;
+    }
+    .col-scroll::-webkit-scrollbar-thumb:hover { background: #adbccb; }
+    .col-scroll::-webkit-scrollbar-track { background: transparent; }
+  }
+  @media (max-width: 991.98px) {
+    .app-shell { height: auto; }
+    .col-scroll { overflow: visible; }
+  }
+
+  .stage-list li {
+    position: relative; padding: 6px 0 6px 22px;
+    font-size: .875rem; color: #8593a3;
+  }
+  .stage-list li::before {
+    content: ""; position: absolute; left: 4px; top: 14px;
+    width: 8px; height: 8px; border-radius: 50%; background: #dfe5ec;
+  }
+  .stage-list li:not(:last-child)::after {
+    content: ""; position: absolute; left: 7.5px; top: 22px; bottom: -2px;
+    width: 1px; background: #e8edf3;
+  }
+  .stage-list li.done { color: #1d2733; }
+  .stage-list li.done::before { background: #2c7a55; }
+  .stage-list li.active { color: var(--brand); font-weight: 600; }
+  .stage-list li.active::before { background: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
+
+  /* 过程流：让「系统在做什么」逐条可见，而不是一个转圈等到底 */
+  .progress-thin { height: 3px; background: #eef2f7; overflow: hidden; }
+  .progress-thin-fill {
+    width: 35%; height: 100%;
+    background: linear-gradient(90deg, #1f4e79, #5b93c7);
+    animation: thinSlide 1.5s ease-in-out infinite;
+  }
+  @keyframes thinSlide { 0% { transform: translateX(-100%); } 100% { transform: translateX(320%); } }
+
+  .log-panel { max-height: 420px; min-height: 160px; overflow: auto; }
+  .stream-row {
+    display: flex; gap: 8px; align-items: flex-start; padding: 6px 0;
+    font-size: .8125rem; animation: streamIn .3s ease-out;
+  }
+  @keyframes streamIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: none; }
+  }
+  .stream-seq {
+    color: #b3bdc9; font-variant-numeric: tabular-nums;
+    min-width: 20px; flex: 0 0 auto; padding-top: 1px;
+  }
+  .stream-dot {
+    width: 8px; height: 8px; border-radius: 50%; background: #cdd7e2;
+    margin-top: 6px; flex: 0 0 auto;
+  }
+  .stream-label { min-width: 84px; color: #6b7a8d; flex: 0 0 auto; padding-top: 1px; }
+  .stream-body { flex: 1 1 auto; min-width: 0; }
+  .stream-text { display: block; color: #1d2733; word-break: break-word; }
+  .stream-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+  .stream-chip {
+    font-size: .7rem; border: 1px solid #e3e8ef; border-radius: 999px;
+    padding: 0 8px; color: #5a6a7a; background: #f7f9fc;
+    max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .stream-row.kind-stage .stream-dot { background: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
+  .stream-row.kind-stage .stream-text { font-weight: 600; color: var(--brand); }
+  .stream-row.kind-hit .stream-dot { background: #2c7a55; }
+  .stream-row.kind-warn .stream-dot { background: #d98b2b; }
+  .stream-row.kind-muted .stream-dot { background: #dfe5ec; }
+  .stream-row.kind-muted .stream-text { color: #8593a3; }
+  .stream-row.kind-status .stream-text { color: #6b7a8d; font-style: italic; }
+  .stream-row.stream-bubble { border-left: 3px solid #dfe5ec; padding-left: 10px; margin-left: 2px; }
+  .stream-row.stream-bubble .stream-label { font-weight: 600; color: #46586b; }
+  .stream-row[data-agent="claimant"] { border-left-color: #1f4e79; }
+  .stream-row[data-agent="defendant"] { border-left-color: #a06a2c; }
+  .stream-row[data-agent="judge"] { border-left-color: #2c7a55; }
+  .stream-row[data-agent="redteam"] { border-left-color: #b23c3c; }
+  .stream-row[data-agent="researcher"] { border-left-color: #5b7fa6; }
+  .stream-text.cursor::after { content: "▍"; color: #9aa8b8; animation: caret 1s steps(1) infinite; }
+  @keyframes caret { 50% { opacity: 0; } }
+
+  /* 结论摘要：像滑条一样从左往右滑出，而不是整块闪一下 */
+  .reveal {
+    animation: revealSlide .5s cubic-bezier(.22, .61, .36, 1) both;
+  }
+  @keyframes revealSlide {
+    from { clip-path: inset(0 100% 0 0); opacity: .35; transform: translateX(-10px); }
+    to { clip-path: inset(0 0 0 0); opacity: 1; transform: translateX(0); }
+  }
+  .reveal-line { margin: 0; }
+  .reveal-line + .reveal-line { margin-top: 4px; }
+
+  .stat {
+    border-radius: var(--radius); background: var(--surface-soft);
+    padding: var(--space-3) 14px; height: 100%;
+  }
+  .stat .label { font-size: .75rem; color: var(--ink-soft); }
+  .stat .value {
+    font-family: var(--mono); font-size: 1.25rem; font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat .hint { font-size: .72rem; color: var(--ink-mute); line-height: 1.5; }
+  /* 结论摘要与补证说明是多行文本，必须保留换行，否则几段话会挤成一坨 */
+  #summaryText { white-space: normal; }
+
+  .report-section {
+    border: 1px solid var(--line-soft); border-radius: var(--radius);
+    padding: 10px 12px; margin-bottom: var(--space-2); background: #fff;
+  }
+  .report-section summary { cursor: pointer; font-weight: 600; }
+  .report-section[open] summary { margin-bottom: 8px; }
+  .report-section pre {
+    white-space: pre-wrap; margin: 0; font-family: inherit;
+    font-size: .875rem; color: #2a3644;
+  }
+  .empty { color: #93a1b1; font-size: .875rem; text-align: center; padding: 16px 0; }
+  .priority-P0 { --bs-badge-color: #fff; }
+</style>
+</head>
+<body class="bg-body-tertiary">
+
+<header class="bg-white border-bottom sticky-top app-header">
+  <div class="container-fluid px-4 h-100 d-flex align-items-center gap-3">
+    <div class="brand-mark">案理</div>
+    <div>
+      <div class="fw-semibold">法律维权决策智能体</div>
+      <div class="text-secondary small">杭州智能体大赛 · AI+超级智能体赛道</div>
+    </div>
+    <span class="badge rounded-pill text-bg-warning ms-auto">参考性质，不构成法律意见</span>
+    <span class="badge rounded-pill text-bg-secondary" id="modelBadge">模型状态未知</span>
+  </div>
+</header>
+
+<main class="container-fluid px-4 py-3 app-shell">
+  <div class="row g-3">
+
+    <!-- 左栏：身份 / 阶段 / 案情输入 -->
+    <div class="col-12 col-lg-3 col-scroll">
+      <div>
+        <div class="card mb-3">
+          <div class="card-header">我的身份</div>
+          <div class="card-body">
+            <div class="btn-group-vertical w-100" id="roles" role="group" aria-label="选择身份"></div>
+            <div class="form-text mt-2">身份决定立场，分析过程中也可切换。</div>
+          </div>
+        </div>
+
+        <div class="card mb-3">
+          <div class="card-header">处理阶段</div>
+          <div class="card-body">
+            <ol class="list-unstyled stage-list mb-0" id="stages"></ol>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">案情与材料</div>
+          <div class="card-body">
+            <label class="form-label" for="region">适用地区</label>
+            <select class="form-select form-select-sm" id="region" aria-label="适用地区"></select>
+            <div class="form-text mt-1">民事裁判尺度各省不同，类案区间只按你选的省份取样本。</div>
+
+            <label class="form-label" for="desc">案情描述</label>
+            <textarea id="desc" class="form-control" rows="6"
+              placeholder="用你自己的话描述：时间、经过、损失、你希望的结果。"></textarea>
+
+            <div class="d-flex gap-2 mt-2">
+              <button type="button" class="btn btn-outline-secondary btn-sm w-50" id="sampleCar">车祸示例</button>
+              <button type="button" class="btn btn-outline-secondary btn-sm w-50" id="sampleConsumption">消费维权示例</button>
+            </div>
+            <button type="button" class="btn btn-outline-primary btn-sm w-100 mt-2" id="templateBtn">
+              用模板填写（按当前身份生成，填空即可）
+            </button>
+            <div class="form-text mt-1" id="templateHint">模板会按你选择的身份生成对应的问题，没提到的项目直接删掉即可。</div>
+
+            <label class="form-label mt-3" for="files">证据材料</label>
+            <input class="form-control" type="file" id="files" multiple>
+            <div class="form-text" id="filelist">可多选。有票据或原件的按凭证金额认定；只有口头说明又没有凭证的，通常不予支持。</div>
+
+            <label class="form-label mt-3" for="expectation" id="expectationLabel">期望金额</label>
+            <div class="input-group">
+              <span class="input-group-text">¥</span>
+              <input class="form-control" type="number" id="expectation" min="0" step="100" placeholder="12000">
+              <span class="input-group-text">元</span>
+            </div>
+
+            <button class="btn btn-primary w-100 mt-3" id="run">
+              <span class="spinner-border spinner-border-sm me-2 d-none" id="runSpin"></span>
+              <span id="runLabel">开始咨询</span>
+            </button>
+            <div class="alert alert-danger mt-2 mb-0 d-none" id="formError"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 中栏：进度 / 结论 / 补证 / 策略 / 报告 -->
+    <div class="col-12 col-lg-6 col-scroll">
+      <div class="card mb-3">
+        <div class="card-header d-flex align-items-center">
+          <span>分析进度</span>
+          <span class="badge text-bg-light border ms-auto me-2" id="stageLabel">未开始</span>
+          <span class="badge text-bg-secondary" id="stateBadge">未开始</span>
+        </div>
+        <div class="progress-thin d-none" id="runBar"><div class="progress-thin-fill"></div></div>
+        <div class="card-body">
+          <div class="alert alert-info py-2 px-3 small d-none" id="restoreHint"></div>
+          <div class="alert alert-danger py-2 px-3 small d-none" id="offlineNotice"></div>
+          <div class="log-panel" id="log">
+            <div class="empty">选择身份、填写案情后点击「开始咨询」。</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-3" id="guideCard">
+        <div class="card-header">使用说明</div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-12 col-md-4">
+              <div class="fw-semibold mb-1">1 · 说清发生了什么</div>
+              <div class="small text-secondary">时间、对方是谁、经过、损失金额、你希望的结果。说得越具体，算得越准。</div>
+            </div>
+            <div class="col-12 col-md-4">
+              <div class="fw-semibold mb-1">2 · 上传手上的材料</div>
+              <div class="small text-secondary">合同、票据、聊天记录、认定书。有凭证的按凭证金额认定，缺凭证但法律有计算标准的按标准算。</div>
+            </div>
+            <div class="col-12 col-md-4">
+              <div class="fw-semibold mb-1">3 · 拿到结论与打法</div>
+              <div class="small text-secondary">先给结论摘要和策略建议；证据不够时会停下来，告诉你缺什么、值多少钱、去哪儿补。</div>
+            </div>
+          </div>
+          <hr>
+          <div class="small text-secondary mb-0">
+            没有现成材料？可以先点左下角的示例按钮感受流程，再换成你自己的情况。
+            本系统输出为参考性质，不构成法律意见。
+          </div>
+        </div>
+      </div>
+
+      <!-- 转人工/超范围要排在最前面：先让用户看到为什么停住 -->
+      <div class="card mb-3 d-none" id="humanCard">
+        <div class="card-header d-flex align-items-center">
+          <span id="humanTitle">需要人工介入</span>
+          <span class="badge text-bg-danger ms-auto" id="humanBadge">已暂停交付</span>
+        </div>
+        <div class="card-body">
+          <div id="humanReasons" class="vstack gap-1"></div>
+          <div class="small fw-semibold mt-3">建议求助渠道</div>
+          <ul class="small text-secondary mb-0" id="humanChannels"></ul>
+          <div class="mt-3 d-none" id="humanActions">
+            <div class="form-text mb-2">
+              确认只是表示你知道存在这些风险，不代表系统给出了法律意见；
+              确认后系统会继续给出行动路径与文书草稿。
+            </div>
+            <button class="btn btn-danger w-100" id="approve">
+              <span class="spinner-border spinner-border-sm me-2 d-none" id="approveSpin"></span>
+              <span id="approveLabel">我已知晓风险，继续查看完整方案</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-3 d-none" id="summaryCard">
+        <div class="card-header">结论摘要</div>
+        <div class="card-body">
+          <div class="alert alert-warning py-2 px-3 small d-none" id="demoNotice"></div>
+          <div class="alert alert-light border py-2 px-3 small d-none" id="understanding"></div>
+          <p class="mb-3" id="summaryText"></p>
+          <div class="row g-2" id="statRow"></div>
+          <div class="form-text mt-3" id="metaLine"></div>
+        </div>
+      </div>
+
+      <div class="card mb-3 d-none" id="evidenceCard">
+        <div class="card-header d-flex align-items-center">
+          <span>需要你补充的证据</span>
+          <span class="badge text-bg-warning ms-auto" id="sufficiencyBadge"></span>
+        </div>
+        <div class="card-body">
+          <div id="evidenceList" class="vstack gap-2"></div>
+          <hr>
+          <div class="row g-2">
+            <div class="col-12">
+              <div class="form-label mb-1">我手上已经有这些材料</div>
+              <div class="form-text mt-0 mb-2">勾选后系统直接按「已有材料」计入，不依赖文件名识别。</div>
+              <div id="confirmList" class="vstack gap-1"></div>
+            </div>
+            <div class="col-12">
+              <label class="form-label" for="moreFiles">补交材料</label>
+              <input class="form-control" type="file" id="moreFiles" multiple>
+            </div>
+            <div class="col-12">
+              <label class="form-label" for="moreNote">补充说明</label>
+              <textarea class="form-control" id="moreNote" rows="2"
+                placeholder="例如：误工费实际减少收入 4000 元"></textarea>
+            </div>
+            <div class="col-12">
+              <button class="btn btn-warning w-100" id="continue">
+                <span class="spinner-border spinner-border-sm me-2 d-none" id="continueSpin"></span>
+                <span id="continueLabel">补交并继续分析</span>
+              </button>
+            </div>
+            <div class="col-12">
+              <button class="btn btn-outline-secondary w-100" id="waive">
+                这些材料我拿不出来，直接按现有情况给结论
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-3 d-none" id="strategyCard">
+        <div class="card-header">策略建议</div>
+        <div class="card-body"><div id="strategyList" class="vstack gap-2"></div></div>
+      </div>
+
+      <div class="card d-none" id="reportCard">
+        <div class="card-header">完整报告</div>
+        <div class="card-body"><div id="report"></div></div>
+      </div>
+    </div>
+
+    <!-- 右栏：引用核验 / 风险清单 -->
+    <div class="col-12 col-lg-3 col-scroll">
+      <div>
+        <div class="card mb-3" id="officialBox">
+          <div class="card-header">官方库核对</div>
+          <div class="card-body">
+            <div id="officialChecks" class="vstack gap-1">
+              <div class="empty">检索后显示法条在国家法律法规数据库的收录情况。</div>
+            </div>
+            <div class="form-text mt-2">只证明该法存在与公布 / 施行日期，不代替条文正文核验。</div>
+          </div>
+        </div>
+        <div class="card mb-3">
+          <div class="card-header">引用与核验</div>
+          <div class="card-body">
+            <div id="citations" class="vstack gap-2">
+              <div class="empty">分析完成后显示法条与类案来源。</div>
+            </div>
+          </div>
+        </div>
+        <div class="card mb-3">
+          <div class="card-header">官方案例参照</div>
+          <div class="card-body">
+            <div id="officialCases" class="vstack gap-2">
+              <div class="empty">检索后显示最高人民法院指导性案例（真实来源）。</div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">风险与漏洞</div>
+          <div class="card-body">
+            <div id="findings" class="vstack gap-2"><div class="empty">暂无。</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  var STAGES = [
+    ["RECEIVED", "接受任务"], ["CLARIFYING", "案情采集"], ["CLASSIFIED", "案由识别"],
+    ["RESEARCHING", "法条与类案检索"], ["DEBATING", "双方对抗"], ["CRITIQUING", "复核修订"],
+    ["EVALUATING", "中立评估"], ["DELIVERED", "交付结果"]
+  ];
+  var ROLES = [
+    ["claimant", "我是原告 / 主张方"], ["defendant", "我是被告 / 抗辩方"], ["judge", "法官视角"]
+  ];
+  // 地区列表以后端 /api/regions 为准，这里留一份兜底，接口不可用时仍能选择
+  var REGIONS_FALLBACK = [
+    "北京市", "天津市", "河北省", "山西省", "内蒙古自治区",
+    "辽宁省", "吉林省", "黑龙江省", "上海市", "江苏省",
+    "浙江省", "安徽省", "福建省", "江西省", "山东省",
+    "河南省", "湖北省", "湖南省", "广东省", "广西壮族自治区",
+    "海南省", "重庆市", "四川省", "贵州省", "云南省",
+    "西藏自治区", "陕西省", "甘肃省", "青海省", "宁夏回族自治区",
+    "新疆维吾尔自治区"
+  ];
+  var DEFAULT_REGION = "浙江省";
+  var ROLE_TEXT = {
+    claimant: {
+      expectLabel: "我的期望金额",
+      stats: ["你的期望", "按现有证据可支持", "最可能落点"]
+    },
+    defendant: {
+      expectLabel: "对方索赔金额",
+      stats: ["对方主张", "可能被支持的金额", "你的合理赔付预期"]
+    },
+    judge: {
+      expectLabel: "案件标的金额",
+      stats: ["本案标的", "按现有证据可支持", "合理裁判区间"]
+    }
+  };
+  // 示例按「场景 × 视角」准备：同一件事，三种身份的说法和关注点不同
+  var SAMPLES = {
+    car: {
+      claimant: {
+        expect: 12000,
+        desc: "6月10号我骑电动车被一辆小轿车撞了，交警出了事故认定书，对方主要责任。"
+          + "门诊治疗花了医疗费3200元，因为养伤误工费大概1800元，请护工花了护理费900元，"
+          + "打车去医院的交通费300元，医生说要补充营养，营养费400元。我想要对方一共赔我12000元。",
+        evidence: ["事故认定书", "医疗费票据", "误工证明"]
+      },
+      defendant: {
+        expect: 12000,
+        desc: "6月10号我开车右转，蹭倒了旁边骑电动车的人，交警认定我负主要责任。"
+          + "对方现在要求我赔偿12000元，说他门诊医疗费花了3200元、误工费1800元、请护工900元、"
+          + "打车300元、营养费400元。我认为误工费和护理费没有依据，营养费也没有医嘱。",
+        evidence: ["事故认定书"]
+      },
+      judge: {
+        expect: 12000,
+        desc: "原告骑电动车与被告驾驶的小轿车发生碰撞，交警认定被告负主要责任。"
+          + "原告主张赔偿12000元，明细为医疗费3200元、误工费1800元、护理费900元、交通费300元、营养费400元。"
+          + "被告对误工费、护理费、营养费提出异议，认为缺乏证据支持。",
+        evidence: ["事故认定书"]
+      }
+    },
+    consumption: {
+      claimant: {
+        expect: 11996,
+        desc: "8月1号我在网上买了一部手机，商家宣传是全新原装，8月4号收货后发现是翻新机。"
+          + "我有订单截图、商品宣传页面和客服聊天记录，8月5号申请退款被商家拒绝。"
+          + "手机花了2999元，我想要退一赔三，一共赔我11996元。",
+        evidence: ["订单截图", "商品宣传页面", "聊天记录"]
+      },
+      defendant: {
+        expect: 11996,
+        desc: "买家在我店里买了手机，说我们宣传全新原装但发的是翻新机，要求退一赔三共计11996元，"
+          + "订单金额2999元。详情页确实写了全新原装，但可能是客服表述不严谨，"
+          + "买家没有官方检测报告，只有订单截图和聊天记录。我认为不构成欺诈。",
+        evidence: ["商品宣传页面", "聊天记录"]
+      },
+      judge: {
+        expect: 11996,
+        desc: "买家主张商家在商品宣传中存在欺诈，要求退还价款并三倍赔偿，合计11996元，商品价款2999元。"
+          + "买家提供订单截图和客服聊天记录，未提供官方检测报告。商家主张属于表述不严谨，不构成欺诈。",
+        evidence: ["订单截图", "聊天记录"]
+      }
+    }
+  };
+  // 每个事件翻译成过程流里的一行：标签、正文、来源标记、颜色与角色
+  var EVENT_ENTRY = {
+    task_created: function () {
+      return { label: "任务创建", text: "已受理本次咨询", tone: "info" };
+    },
+    stage_changed: function (p) {
+      return { label: "阶段推进", text: "进入「" + (STAGE_LABEL[p.state] || p.state) + "」", tone: "stage" };
+    },
+    retrieval_started: function () {
+      return { label: "开始检索", text: "法条库与类案库两条检索并行发起", tone: "info" };
+    },
+    retrieval_query: function (p) {
+      return {
+        label: "正在检索",
+        text: (p.scope === "case" ? "类案：" : "法条：") + p.query,
+        chips: p.detail ? [p.detail] : [],
+        tone: "info"
+      };
+    },
+    retrieval_hit: function (p) {
+      var label = {
+        law: "命中法条",
+        case: "命中类案",
+        law_web: "官方库核对",
+        case_official: "命中官方案例"
+      }[p.scope] || "命中来源";
+      return {
+        label: label,
+        text: p.label,
+        chips: [p.detail, p.source].filter(Boolean)
+          .concat(p.synthetic ? ["演示数据，不得作为最终依据"] : []),
+        tone: p.synthetic ? "warn" : "hit"
+      };
+    },
+    retrieval_finished: function (p) {
+      return {
+        label: "检索完成",
+        text: "命中法条 " + p.provisions + " 条、类案 " + p.cases + " 件",
+        tone: "hit"
+      };
+    },
+    citation_verified: function (p) {
+      return {
+        label: "引用核验",
+        text: p.label + " → " + (p.verified ? "核验通过" : "未通过，已剔除"),
+        chips: [(GRADE_LABEL[p.grade] || p.grade)].concat(p.note ? [p.note] : []),
+        tone: p.verified ? (p.grade === "synthetic" ? "warn" : "hit") : "warn"
+      };
+    },
+    agent_started: function (p) {
+      return { label: agentLabel(p.agent, p.name), text: "开始工作", agent: p.agent, tone: "info" };
+    },
+    agent_delta: function (p) {
+      var step = p.index && p.total ? "（" + p.index + "/" + p.total + "）" : "";
+      return {
+        label: agentLabel(p.agent, p.name) + step,
+        text: p.text,
+        agent: p.agent,
+        tone: p.kind === "status" ? "status" : "info"
+      };
+    },
+    agent_message: function (p) {
+      return {
+        label: agentLabel(p.agent, p.name),
+        text: p.summary || p.detail || "",
+        agent: p.agent,
+        tone: "info"
+      };
+    },
+    critic_finding: function (p) {
+      return {
+        label: "复核意见",
+        text: "[" + (SEVERITY_LABEL[p.severity] || p.severity) + "] " + p.category + "：" + p.detail,
+        tone: "warn"
+      };
+    },
+    round_started: function (p) {
+      return {
+        label: "第 " + p.round + " 轮",
+        text: "针对 " + p.open_findings + " 条复核意见进入修订：修订方案 → 对方反驳 → 再次复核",
+        tone: "stage"
+      };
+    },
+    evidence_requested: function (p) {
+      return { label: "证据补强", text: "还缺 " + p.count + " 项材料，流程暂不结束", tone: "warn" };
+    },
+    approval_required: function (p) {
+      var reasons = (p.reasons || []).join("；");
+      return {
+        label: "转人工",
+        text: "已暂停交付，行动方案需要你确认风险后再给：" + reasons,
+        tone: "warn"
+      };
+    },
+    artifact_ready: function (p) {
+      return { label: "交付物", text: "生成「" + (ARTIFACT_LABEL[p.kind] || p.kind) + "」", tone: "hit" };
+    },
+    task_completed: function (p) {
+      return { label: "任务完成", text: "共生成 " + p.artifacts + " 份交付物", tone: "stage" };
+    },
+    task_failed: function (p) {
+      return { label: "任务失败", text: String(p.error || ""), tone: "warn" };
+    }
+  };
+  // 手工写进过程流的提示（示例填充、身份切换等）用这套标签
+  var KIND_LABEL = {
+    "已切换身份": "身份切换", "已填入示例": "示例填充", "已填入模板": "模板填充",
+    "补交材料": "补交材料", "材料说明": "材料说明"
+  };
+  function agentLabel(key, name) { return name || AGENT_LABEL[key] || key || ""; }
+  var STAGE_LABEL = {};
+  STAGES.forEach(function (item) { STAGE_LABEL[item[0]] = item[1]; });
+  var MAIN_STAGES = {};
+  STAGES.forEach(function (item) { MAIN_STAGES[item[0]] = true; });
+  STAGE_LABEL.NEEDS_EVIDENCE = "待补证据";
+  STAGE_LABEL.NEEDS_INFO = "待补信息";
+  STAGE_LABEL.NEEDS_HUMAN = "转人工";
+  STAGE_LABEL.CANCELLED = "已取消";
+  var AGENT_LABEL = {
+    claimant: "主张方", defendant: "抗辩方", judge: "法官视角",
+    researcher: "检索书记员", redteam: "质证复核"
+  };
+  var ARTIFACT_LABEL = {
+    summary: "结论摘要", evidence_request: "证据补强清单", strategy: "策略建议",
+    stance: "立场分析",
+    analysis: "案件分析", feasibility: "诉求可行性", evidence: "证据清单",
+    research: "法条与类案", risk: "风险与漏洞", actions: "维权路径对照",
+    calculation: "金额计算说明", revision: "修订说明",
+    document: "文书草稿", need_info: "补充信息提示"
+  };
+  var GRADE_LABEL = {
+    authoritative: "已核验", synthetic: "演示数据", unverified: "未通过"
+  };
+  var SEVERITY_LABEL = { high: "高", medium: "中", low: "低" };
+  var STATE_TEXT = {
+    RUNNING: ["分析中", "text-bg-primary"],
+    NEEDS_EVIDENCE: ["待补证据", "text-bg-warning"],
+    DELIVERED: ["已完成", "text-bg-success"],
+    NEEDS_INFO: ["待补信息", "text-bg-warning"],
+    NEEDS_HUMAN: ["转人工", "text-bg-danger"],
+    FAILED: ["失败", "text-bg-danger"]
+  };
+
+  var role = "claimant";
+  var lastSampleKey = null;
+  var sampleConfirmed = [];
+  var sampleDesc = "";
+  var lastMainStage = "RECEIVED";
+  var insertedTemplate = null;
+  var SCHEMA = {};
+  var lastResult = null;
+
+  // 填空式回答模板：按身份给出该说清楚的问题，用户只替换下划线部分
+  var BLANK = "________";
+  var TEMPLATES = {
+    claimant: [
+      "【事情经过】" + BLANK + "年" + BLANK + "月" + BLANK + "日，我在" + BLANK + "，发生了" + BLANK + "。",
+      "【对方情况】对方是" + BLANK + "，我这边" + BLANK + "。",
+      "【责任认定】交警或平台认定：" + BLANK + "（例如对方全责 / 主要责任 / 同等责任 / 没有认定）。",
+      "【我的损失】",
+      "医疗费：" + BLANK + "元",
+      "误工费：" + BLANK + "元（误工" + BLANK + "天）",
+      "护理费：" + BLANK + "元（护理" + BLANK + "天）",
+      "交通费：" + BLANK + "元",
+      "营养费：" + BLANK + "元",
+      "其他损失：" + BLANK + "元",
+      "【手上的材料】我已经有：" + BLANK + "；暂时没有：" + BLANK + "。",
+      "【我希望的结果】要求对方赔偿" + BLANK + "元，或者" + BLANK + "。",
+      "【其他情况】" + BLANK + "。"
+    ].join("\n"),
+    defendant: [
+      "【事情经过】" + BLANK + "年" + BLANK + "月" + BLANK + "日，发生了" + BLANK + "。",
+      "【责任认定】交警或平台认定：" + BLANK + "（我是否承担主要责任：" + BLANK + "）。",
+      "【对方的主张】对方要求我赔偿" + BLANK + "元，明细是" + BLANK + "。",
+      "【我认为不合理的部分】" + BLANK + "（例如误工费没有依据、营养费没有医嘱、金额明显偏高）。",
+      "【我手上的材料】我有：" + BLANK + "；我没有：" + BLANK + "。",
+      "【保险情况】我的交强险和商业险情况：" + BLANK + "。",
+      "【我希望的结果】" + BLANK + "（例如把赔偿压到" + BLANK + "元以内、驳回不合理部分）。",
+      "【其他情况】" + BLANK + "。"
+    ].join("\n"),
+    judge: [
+      "【案件概况】原告" + BLANK + "，被告" + BLANK + "，" + BLANK + "。",
+      "【责任认定】交警或平台认定：" + BLANK + "。",
+      "【原告主张】原告要求" + BLANK + "元，明细为" + BLANK + "。",
+      "【被告抗辩】被告认为" + BLANK + "。",
+      "【双方争议焦点】" + BLANK + "。",
+      "【双方材料】原告提供：" + BLANK + "；被告提供：" + BLANK + "。",
+      "【需要查明的问题】" + BLANK + "。"
+    ].join("\n")
+  };
+  var currentTask = null;
+  var source = null;
+  var pollTimer = null;
+
+  // 过程流：事件先入队，再按固定节奏一条条铺出来，避免一屏刷完看不出过程
+  var STREAM_INTERVAL = 240;   // 相邻两条之间的最短间隔（毫秒）
+  var STREAM_TYPE_MS = 10;     // 打字机速度
+  var STREAM_TYPE_MAX = 420;   // 单条最长打字时间
+  var streamQueue = [];
+  var streamBusy = false;
+  var streamTimer = null;
+  var streamEnded = false;
+  var streamSeq = 0;
+  var elapsedTimer = null;
+  var elapsedStart = 0;
+
+  function $(id) { return document.getElementById(id); }
+
+  function regionValue() {
+    var box = $("region");
+    return (box && box.value) || DEFAULT_REGION;
+  }
+
+  function fillRegions(list, selected) {
+    var box = $("region");
+    var items = (list && list.length) ? list : REGIONS_FALLBACK;
+    var keep = selected || box.value || DEFAULT_REGION;
+    box.innerHTML = "";
+    items.forEach(function (name) {
+      var option = document.createElement("option");
+      option.value = name;
+      option.textContent = name;
+      box.appendChild(option);
+    });
+    box.value = items.indexOf(keep) >= 0 ? keep : DEFAULT_REGION;
+  }
+
+  function renderRoles() {
+    var box = $("roles");
+    box.innerHTML = "";
+    ROLES.forEach(function (item) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn text-start " + (item[0] === role ? "btn-primary" : "btn-outline-primary");
+      btn.textContent = item[1];
+      btn.setAttribute("aria-pressed", String(item[0] === role));
+      btn.addEventListener("click", function () {
+        role = item[0];
+        renderRoles();
+        addLog("已切换身份", item[1].replace("我是 ", ""), "muted");
+        if (lastSampleKey) { fillSample(lastSampleKey); }
+        refreshTemplateForRole();
+      });
+      box.appendChild(btn);
+    });
+    var text = ROLE_TEXT[role] || ROLE_TEXT.claimant;
+    $("expectationLabel").textContent = text.expectLabel;
+  }
+
+  function renderStages(current) {
+    var list = $("stages");
+    list.innerHTML = "";
+    // 分支状态（待补证据 / 待补信息）不推进阶段，进度停在最后一次主链阶段
+    var mainCurrent = MAIN_STAGES[current] ? current : lastMainStage;
+    if (MAIN_STAGES[current]) { lastMainStage = current; }
+    var reached = false;
+    STAGES.forEach(function (item) {
+      var li = document.createElement("li");
+      li.textContent = item[1];
+      if (item[0] === mainCurrent) { li.className = "active"; reached = true; }
+      else if (!reached) { li.className = "done"; }
+      list.appendChild(li);
+    });
+    // 阶段标签同样只反映主链阶段，避免与右侧状态徽章重复
+    if (MAIN_STAGES[current]) { setStageLabel(current); }
+  }
+
+  function addLog(kind, text, variant) {
+    enqueueStream({
+      label: KIND_LABEL[kind] || kind,
+      text: text,
+      tone: variant === "muted" ? "muted" : "info"
+    });
+  }
+
+  function escapeHtml(text) {
+    return String(text === null || text === undefined ? "" : text)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+
+  function resetStream() {
+    if (streamTimer) { clearTimeout(streamTimer); streamTimer = null; }
+    streamQueue = [];
+    streamBusy = false;
+    streamEnded = false;
+    streamSeq = 0;
+    $("log").innerHTML = "";
+  }
+
+  function enqueueStream(entry) {
+    streamQueue.push(entry);
+    pumpStream();
+  }
+
+  function pumpStream() {
+    if (streamBusy) { return; }
+    var log = $("log");
+    if (!streamQueue.length) {
+      if (streamEnded) { endStream(); }
+      return;
+    }
+    streamBusy = true;
+    if (log.querySelector(".empty")) { log.innerHTML = ""; }
+    var entry = streamQueue.shift();
+    var row = renderStreamEntry(entry);
+    var textEl = row.querySelector(".stream-text");
+    var full = entry.text || "";
+    // 事件积压时不逐字打字，直接铺满，避免画面落后于真实进度
+    var instant = streamQueue.length > 8 || full.length > 90;
+    typeText(textEl, full, instant, function () {
+      streamBusy = false;
+      streamTimer = setTimeout(pumpStream, STREAM_INTERVAL);
+    });
+  }
+
+  function typeText(el, text, instant, done) {
+    if (instant || !text) {
+      el.textContent = text || "";
+      done();
+      return;
+    }
+    var maxSteps = Math.max(1, Math.floor(STREAM_TYPE_MAX / STREAM_TYPE_MS));
+    var step = Math.max(1, Math.ceil(text.length / maxSteps));
+    var shown = 0;
+    var log = $("log");
+    el.classList.add("cursor");
+    var timer = setInterval(function () {
+      shown = Math.min(text.length, shown + step);
+      el.textContent = text.slice(0, shown);
+      log.scrollTop = log.scrollHeight;
+      if (shown >= text.length) {
+        clearInterval(timer);
+        el.classList.remove("cursor");
+        done();
+      }
+    }, STREAM_TYPE_MS);
+  }
+
+  function renderStreamEntry(entry) {
+    var log = $("log");
+    streamSeq += 1;
+    var row = document.createElement("div");
+    row.className = "stream-row kind-" + (entry.tone || "info");
+    if (entry.agent) {
+      row.classList.add("stream-bubble");
+      row.setAttribute("data-agent", entry.agent);
+    }
+    var seqEl = document.createElement("span");
+    seqEl.className = "stream-seq";
+    seqEl.textContent = String(streamSeq).padStart(2, "0");
+    var dotEl = document.createElement("span");
+    dotEl.className = "stream-dot";
+    var labelEl = document.createElement("span");
+    labelEl.className = "stream-label";
+    labelEl.textContent = entry.label || "";
+    var bodyEl = document.createElement("span");
+    bodyEl.className = "stream-body";
+    var textEl = document.createElement("span");
+    textEl.className = "stream-text";
+    bodyEl.appendChild(textEl);
+    if (entry.chips && entry.chips.length) {
+      var chipsEl = document.createElement("span");
+      chipsEl.className = "stream-chips";
+      entry.chips.forEach(function (chip) {
+        if (!chip) { return; }
+        var chipEl = document.createElement("span");
+        chipEl.className = "stream-chip";
+        chipEl.textContent = String(chip).replace(/^https?:\/\//, "").slice(0, 64);
+        chipsEl.appendChild(chipEl);
+      });
+      bodyEl.appendChild(chipsEl);
+    }
+    row.append(seqEl, dotEl, labelEl, bodyEl);
+    log.appendChild(row);
+    log.scrollTop = log.scrollHeight;
+    return row;
+  }
+
+  function markStreamEnded() {
+    streamEnded = true;
+    pumpStream();
+  }
+
+  function endStream() {
+    streamEnded = false;
+    stopPolling();
+    setRunning(false);
+    loadResult();
+  }
+
+  function pushSourcePreview(p) {
+    var box = $("citations");
+    if (box.querySelector(".empty")) { box.innerHTML = ""; }
+    var badge = p.synthetic ? ["演示数据", "text-bg-warning"]
+      : p.scope === "case" ? ["类案", "text-bg-secondary"]
+      : p.scope === "case_official" ? ["官方案例", "text-bg-primary"]
+      : p.scope === "law_web" ? ["官方库", "text-bg-info"]
+      : ["法条", "text-bg-success"];
+    var card = document.createElement("div");
+    card.className = "border rounded-3 p-2";
+    card.innerHTML = '<div class="d-flex align-items-center gap-2">'
+      + '<span class="badge ' + badge[1] + '">' + badge[0] + '</span>'
+      + '<span class="small fw-semibold">' + escapeHtml(p.label) + '</span></div>';
+    box.appendChild(card);
+  }
+
+  // 兜底轮询：即使漏了事件，也不会让界面一直卡在「分析中」
+  function startPolling() {
+    stopPolling();
+    pollTimer = setInterval(function () {
+      if (!currentTask) { return; }
+      fetch("/api/tasks/" + currentTask)
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+          if (data.error) { showError("后端异常：" + data.error); }
+          if ((data.state && data.state !== "RUNNING") || data.error) {
+            if (source) { source.close(); source = null; }
+            markStreamEnded();
+          }
+        })
+        .catch(function () { /* 忽略轮询失败，SSE 仍是主通道 */ });
+    }, 1500);
+  }
+
+  function stopPolling() {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  }
+
+  function renderElapsed() {
+    var seconds = Math.round((Date.now() - elapsedStart) / 1000);
+    $("stateBadge").textContent = "分析中 · " + seconds + "s";
+  }
+
+  function startElapsed() {
+    stopElapsed();
+    elapsedStart = Date.now();
+    renderElapsed();
+    elapsedTimer = setInterval(renderElapsed, 1000);
+  }
+
+  function stopElapsed() {
+    if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
+  }
+
+  function setStageLabel(state, text) {
+    $("stageLabel").textContent = text || (state ? (STAGE_LABEL[state] || state) : "未开始");
+  }
+
+  function setState(key) {
+    var info = STATE_TEXT[key] || ["未开始", "text-bg-secondary"];
+    var badge = $("stateBadge");
+    badge.className = "badge " + info[1];
+    badge.textContent = info[0];
+  }
+
+  function showError(message) {
+    var box = $("formError");
+    box.textContent = message;
+    box.classList.remove("d-none");
+  }
+
+  function clearError() { $("formError").classList.add("d-none"); }
+
+  function setRunning(isRunning) {
+    $("run").disabled = isRunning;
+    $("runSpin").classList.toggle("d-none", !isRunning);
+    $("runLabel").textContent = isRunning ? "分析中…" : "开始咨询";
+    $("runBar").classList.toggle("d-none", !isRunning);
+    if (isRunning) { startElapsed(); } else { stopElapsed(); }
+  }
+
+  function money(value) {
+    if (value === null || value === undefined) { return "无数据"; }
+    return Math.round(value).toLocaleString("zh-CN");
+  }
+
+  function rangeText(low, high) {
+    if (low === null || low === undefined || high === null || high === undefined) { return "无数据"; }
+    if (Math.round(low) === Math.round(high)) { return "约 " + money(low) + " 元"; }
+    return money(low) + " – " + money(high) + " 元";
+  }
+
+  function readFiles(fileList) {
+    var list = Array.prototype.slice.call(fileList || []);
+    return Promise.all(list.map(function (file) {
+      return new Promise(function (resolve) {
+        var reader = new FileReader();
+        reader.onload = function () {
+          resolve({ name: file.name, data: String(reader.result).split(",")[1] || "" });
+        };
+        reader.onerror = function () { resolve({ name: file.name, data: "" }); };
+        reader.readAsDataURL(file);
+      });
+    }));
+  }
+
+  function postJSON(url, payload) {
+    return fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify(payload)
+    }).then(function (res) {
+      if (!res.ok) { throw new Error("服务返回 " + res.status); }
+      return res.json();
+    });
+  }
+
+  function start() {
+    clearError();
+    var description = $("desc").value.trim();
+    if (!description) {
+      showError("请先用你自己的话描述一下发生了什么。");
+      $("desc").focus();
+      return;
+    }
+    setRunning(true);
+    $("guideCard").classList.add("d-none");
+    resetStream();
+    $("summaryCard").classList.add("d-none");
+    $("evidenceCard").classList.add("d-none");
+    $("strategyCard").classList.add("d-none");
+    $("reportCard").classList.add("d-none");
+    $("citations").innerHTML = '<div class="empty">分析完成后显示法条与类案来源。</div>';
+    $("findings").innerHTML = '<div class="empty">暂无。</div>';
+    $("demoNotice").classList.add("d-none");
+    $("offlineNotice").classList.add("d-none");
+    $("humanCard").classList.add("d-none");
+    $("officialChecks").innerHTML =
+      '<div class="empty">正在核对法条在国家法律法规数据库的收录情况…</div>';
+    $("officialCases").innerHTML =
+      '<div class="empty">正在检索最高人民法院指导性案例缓存…</div>';
+    renderStages("RECEIVED");
+    setState("RUNNING");
+
+    readFiles($("files").files).then(function (files) {
+      return postJSON("/api/tasks", {
+        description: description,
+        role: role,
+        expectation: Number($("expectation").value || 0),
+        region: regionValue(),
+        file_names: files.map(function (item) { return item.name; }),
+        files: files,
+        confirmed: sampleConfirmed
+      });
+    }).then(function (data) {
+      currentTask = data.task_id;
+      saveTaskHandle();
+      $("restoreHint").classList.add("d-none");
+      attachStream();
+    }).catch(function (err) {
+      setRunning(false);
+      showError("发起失败：" + err.message + "。请确认后端服务已启动。");
+    });
+  }
+
+  function attachStream() {
+    if (source) { source.close(); }
+    source = new EventSource("/api/tasks/" + currentTask + "/stream");
+    Object.keys(EVENT_ENTRY).forEach(function (type) {
+      source.addEventListener(type, function (event) {
+        var payload = JSON.parse(event.data);
+        enqueueStream(EVENT_ENTRY[type](payload));
+        if (type === "stage_changed") { renderStages(payload.state); }
+        if (type === "retrieval_hit") { pushSourcePreview(payload); }
+        if (type === "task_completed" || type === "task_failed") {
+          if (source) { source.close(); source = null; }
+          markStreamEnded();
+        }
+      });
+    });
+    startPolling();
+  }
+
+  function loadResult() {
+    fetch("/api/tasks/" + currentTask)
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        renderResult(data);
+        saveTaskHandle();
+      })
+      .catch(function (err) { showError("读取结果失败：" + err.message); });
+  }
+
+  // 任务号存在本地：刷新页面或重启服务后仍能把上次结果找回来
+  function saveTaskHandle() {
+    try { window.localStorage.setItem("anli_task", currentTask || ""); } catch (err) { /* 隐私模式下忽略 */ }
+  }
+
+  function restoreLastTask() {
+    var saved = "";
+    try { saved = window.localStorage.getItem("anli_task") || ""; } catch (err) { saved = ""; }
+    if (!saved) { return; }
+    fetch("/api/tasks/" + saved)
+      .then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (data) {
+        if (!data || !data.state || data.state === "RUNNING") { return; }
+        currentTask = saved;
+        if (data.role && ROLE_TEXT[data.role]) {
+          role = data.role;
+          renderRoles();
+        }
+        renderResult(data);
+        var hint = $("restoreHint");
+        var label = STATE_TEXT[data.state] ? STATE_TEXT[data.state][0] : data.state;
+        hint.textContent = "已从检查点恢复上次分析（任务号 " + saved
+          + "，状态：" + label + "）。要重新分析请直接修改案情后再次点击开始。";
+        hint.classList.remove("d-none");
+      })
+      .catch(function () { /* 恢复失败不影响新任务 */ });
+  }
+
+  function renderResult(data) {
+    setState(data.state);
+    if (data.error) { showError("后端异常：" + data.error); }
+
+    var a = data.assessment;
+    renderHuman(data);
+    renderUnderstanding(data.understanding);
+    if (data.summary) {
+      $("summaryCard").classList.remove("d-none");
+      renderSummaryLines($("summaryText"), data.summary);
+    }
+    renderOfflineNotice(data);
+    renderDemoNotice(a, data.understanding);
+    var statRow = $("statRow");
+    var labels = (ROLE_TEXT[role] || ROLE_TEXT.claimant).stats;
+    statRow.innerHTML = "";
+    if (a) {
+      var cards = [
+        [labels[0], money(a.expectation) + " 元", ""],
+        [labels[1], money(a.legal_cap) + " 元", ""],
+        [labels[2], rangeText(a.likely_low, a.likely_high),
+          "同类中位数 " + money(a.case_median) + " 元 · " + (a.sample_note || ("样本 " + a.sample_size + " 件"))]
+      ];
+      cards.forEach(function (item) {
+        var col = document.createElement("div");
+        col.className = "col-12 col-md-4 reveal";
+        col.style.animationDelay = (Math.max(0, cards.indexOf(item)) * 90) + "ms";
+        col.innerHTML = '<div class="stat"><div class="label">' + item[0] + '</div>'
+          + '<div class="value">' + item[1] + '</div>'
+          + '<div class="hint">' + item[2] + '</div></div>';
+        statRow.appendChild(col);
+      });
+    }
+    $("metaLine").textContent = "适用地区：" + ((data.understanding && data.understanding.region) || regionValue())
+      + " · 案情理解方式：" + (data.intake_source === "llm" ? "大模型抽取" : "规则抽取")
+      + " · 模型调用 " + (data.llm_calls || 0) + " 次 · 证据充分度 "
+      + (typeof data.evidence_sufficiency === "number"
+        ? Math.round(data.evidence_sufficiency * 100) + "%" : "—");
+
+    renderOfficialChecks(data.law_sources || []);
+    renderOfficialCases(data.official_cases || []);
+    renderEvidence(data);
+    renderStrategies(data.strategies || []);
+    renderCitations(data.citations || []);
+    renderFindings(data.findings || []);
+    renderReport(data.report || "");
+  }
+
+  // 演示数据必须写在结论卡里，而不是只躲在附录
+  // 结论摘要逐行滑出：像滑条一样从左往右推开，而不是整块闪一下
+  function renderSummaryLines(box, text) {
+    box.innerHTML = "";
+    var delay = 0;
+    String(text || "").split("\n").forEach(function (line) {
+      var trimmed = line.replace(/\s+$/, "");
+      var row = document.createElement("div");
+      if (!trimmed) {
+        row.className = "reveal-line";
+        row.innerHTML = "&nbsp;";
+        box.appendChild(row);
+        return;
+      }
+      row.className = "reveal-line reveal";
+      row.style.animationDelay = delay + "ms";
+      row.textContent = trimmed;
+      box.appendChild(row);
+      delay += 70;
+    });
+  }
+
+  // 掉线提示：走规则版时必须说清楚，不能让用户以为是大模型给的结论
+  function renderOfflineNotice(data) {
+    var box = $("offlineNotice");
+    var status = data.llm_status;
+    if (!status || status === "online") { box.classList.add("d-none"); return; }
+    box.classList.remove("d-none");
+    box.textContent = "已掉线：" + (data.llm_status_text || "本次为规则版分析（未连接大模型）")
+      + "。规则版仍会完成检索、引用核验与金额计算，但论证与措辞比大模型版弱。";
+  }
+
+  function renderDemoNotice(a, understanding) {
+    var box = $("demoNotice");
+    var lines = [];
+    if (a && a.synthetic_sample_size) {
+      lines.push("本次类案区间包含 " + a.synthetic_sample_size + " 件演示数据，"
+        + "仅用于演示检索与计算流程，不是真实裁判结果，不作为法律依据。");
+    }
+    if (a && a.cross_region_sample_size) {
+      lines.push("其中 " + a.cross_region_sample_size + " 件来自其他省份："
+        + (a.region || "") + "本地区样本不足，各地裁判尺度存在差异，跨省区间只能作弱参照。");
+    }
+    if (!lines.length) { box.classList.add("d-none"); return; }
+    box.classList.remove("d-none");
+    box.textContent = "";
+    lines.forEach(function (line) {
+      var div = document.createElement("div");
+      div.textContent = line;
+      box.appendChild(div);
+    });
+  }
+
+  // 转人工 / 超范围：把「为什么停下来」和「去哪儿求助」摆在最显眼的位置
+  function renderHuman(data) {
+    var card = $("humanCard");
+    var scope = data.out_of_scope;
+    var reasons = data.human_review || [];
+    if (!scope && !reasons.length) { card.classList.add("d-none"); return; }
+    card.classList.remove("d-none");
+
+    var lines = [];
+    if (scope) {
+      $("humanTitle").textContent = "超出覆盖范围：" + scope.kind + "案件";
+      $("humanBadge").textContent = "不提供分析结论";
+      $("humanBadge").className = "badge text-bg-secondary ms-auto";
+      $("humanActions").classList.add("d-none");
+      lines.push("本产品只做民事纠纷，不出具刑事、行政案件的分析结论。");
+      if ((scope.matched || []).length) {
+        lines.push("触发判断的说法：" + scope.matched.join("、"));
+      }
+    } else {
+      $("humanTitle").textContent = "需要人工介入";
+      $("humanBadge").textContent = data.approved ? "已确认风险" : "已暂停交付";
+      $("humanBadge").className = "badge ms-auto " + (data.approved ? "text-bg-warning" : "text-bg-danger");
+      if (data.approved) {
+        $("humanActions").classList.add("d-none");
+      } else {
+        $("humanActions").classList.remove("d-none");
+      }
+      lines = reasons.slice();
+    }
+
+    var reasonBox = $("humanReasons");
+    reasonBox.innerHTML = "";
+    lines.forEach(function (line) {
+      var div = document.createElement("div");
+      div.className = "small text-danger-emphasis";
+      div.textContent = "· " + line;
+      reasonBox.appendChild(div);
+    });
+
+    var channels = (scope && scope.channels) || data.human_channels || [];
+    var list = $("humanChannels");
+    list.innerHTML = "";
+    channels.forEach(function (item) {
+      var li = document.createElement("li");
+      li.textContent = item;
+      list.appendChild(li);
+    });
+  }
+
+  function approveAndContinue() {
+    if (!currentTask) { return; }
+    var btn = $("approve");
+    btn.disabled = true;
+    $("approveSpin").classList.remove("d-none");
+    $("approveLabel").textContent = "已确认，正在生成完整方案…";
+    postJSON("/api/tasks/" + currentTask + "/approve", {})
+      .then(function () {
+        $("humanCard").classList.add("d-none");
+        resetStream();
+        setState("RUNNING");
+        attachStream();
+      })
+      .catch(function (err) {
+        showError("确认失败：" + err.message);
+      })
+      .finally(function () {
+        btn.disabled = false;
+        $("approveSpin").classList.add("d-none");
+        $("approveLabel").textContent = "我已知晓风险，继续查看完整方案";
+      });
+  }
+
+  function renderOfficialChecks(items) {
+    var box = $("officialChecks");
+    if (!items.length) {
+      if (!box.querySelector(".empty")) {
+        box.innerHTML = '<div class="empty">本次未启用官方库核对。</div>';
+      }
+      return;
+    }
+    box.innerHTML = "";
+    items.forEach(function (item) {
+      var ok = !!item.found;
+      var card = document.createElement("div");
+      card.className = "border rounded-3 p-2";
+      card.innerHTML = '<div class="d-flex align-items-center gap-2">'
+        + '<span class="badge ' + (ok ? "text-bg-success" : "text-bg-secondary") + '">'
+        + (ok ? "官方库已收录" : "未检索到") + '</span>'
+        + '<span class="small fw-semibold">' + escapeHtml(item.official_title || item.law_name) + '</span></div>'
+        + '<div class="small text-secondary mt-1">'
+        + escapeHtml([item.publish_date ? "公布 " + item.publish_date : "",
+          item.effective_date ? "施行 " + item.effective_date : "",
+          item.from_cache ? "缓存" : ""].filter(Boolean).join(" · ") || item.error || "")
+        + '</div>';
+      box.appendChild(card);
+    });
+  }
+
+  // 真实官方案例：带案号、来源链接与抓取时间，和演示数据泾渭分明
+  function renderOfficialCases(items) {
+    var box = $("officialCases");
+    if (!items.length) {
+      box.innerHTML = '<div class="empty">本次未检索到可比的官方案例（不拿演示数据冒充）。</div>';
+      return;
+    }
+    box.innerHTML = "";
+    items.forEach(function (item) {
+      var card = document.createElement("div");
+      card.className = "border rounded-3 p-2";
+      card.innerHTML = '<div class="d-flex align-items-center gap-2">'
+        + '<span class="badge text-bg-primary">官方案例</span>'
+        + '<span class="small fw-semibold">' + escapeHtml(item.case_id) + '</span></div>'
+        + '<div class="small mt-1">' + escapeHtml(item.dispute || "") + '</div>'
+        + '<div class="small text-secondary">'
+        + escapeHtml([item.case_no ? "案号 " + item.case_no : "",
+          item.fetched_at ? "抓取于 " + String(item.fetched_at).slice(0, 10) : ""]
+          .filter(Boolean).join(" · "))
+        + '</div>';
+      if (item.source_url) {
+        var link = document.createElement("a");
+        link.className = "small";
+        link.href = item.source_url;
+        link.target = "_blank";
+        link.rel = "noreferrer";
+        link.textContent = "查看官方页面";
+        card.appendChild(link);
+      }
+      box.appendChild(card);
+    });
+  }
+
+  function renderUnderstanding(info) {
+    var box = $("understanding");
+    if (!info) { box.classList.add("d-none"); return; }
+    var claimed = info.claimed_items || info.claim_items || {};
+    var items = Object.keys(claimed).map(function (key) {
+      return key + " " + money(claimed[key]) + " 元";
+    });
+    var supported = Object.keys(info.claim_items || {}).map(function (key) {
+      return key + " " + money(info.claim_items[key]) + " 元";
+    });
+    var evidence = Object.keys(info.evidence || {}).map(function (key) {
+      return key + "（" + info.evidence[key] + "）";
+    });
+    var lines = [
+      "AI 理解到的内容（可核对，如有出入请补充说明）：",
+      "· 案由：" + (info.cause || "—"),
+      "· 适用地区：" + (info.region || "—"),
+      "· 责任比例：" + Math.round((info.responsibility_ratio || 0) * 100) + "%",
+      "· 你提到的损失：" + (items.length ? items.join("、") : "未识别到金额"),
+      "· 目前有材料支撑的：" + (supported.length ? supported.join("、") : "暂无可支持项目（都缺材料）"),
+      "· 材料线索：" + (evidence.length ? evidence.join("、") : "未识别到材料")
+    ];
+    if (info.timeline && info.timeline.length) {
+      lines.push("· 时间线：" + info.timeline.slice(0, 3).join("；"));
+    }
+    if (info.disputed_points && info.disputed_points.length) {
+      lines.push("· 争议焦点：" + info.disputed_points.slice(0, 4).join("、"));
+    }
+    box.className = "alert alert-light border py-2 px-3 small";
+    box.textContent = "";
+    lines.forEach(function (line) {
+      var div = document.createElement("div");
+      div.textContent = line;
+      box.appendChild(div);
+    });
+  }
+
+  function renderEvidence(data) {
+    var requests = data.evidence_request || [];
+    lastResult = data;
+    var card = $("evidenceCard");
+    if (!requests.length) { card.classList.add("d-none"); return; }
+    card.classList.remove("d-none");
+    $("sufficiencyBadge").textContent = "充分度 "
+      + (typeof data.evidence_sufficiency === "number"
+        ? Math.round(data.evidence_sufficiency * 100) + "%" : "—");
+    var list = $("evidenceList");
+    list.innerHTML = "";
+    var tagMap = {
+      missing: ["完全缺失", "text-bg-danger"],
+      unsupported: ["举证不能", "text-bg-danger"],
+      standard: ["需按法定标准计算", "text-bg-warning"],
+      quality: ["细节不全", "text-bg-warning"],
+      partial: ["仅有口头说明", "text-bg-warning"],
+      unquantified: ["缺金额", "text-bg-secondary"]
+    };
+    var missingLabel = role === "defendant" ? "对方应提供" : "缺";
+    var howLabel = role === "defendant" ? "你可以要求" : "怎么补";
+    requests.forEach(function (item) {
+      var tag = tagMap[item.status] || ["待补充", "text-bg-secondary"];
+      var box = document.createElement("div");
+      box.className = "border rounded-3 p-3";
+      box.style.borderLeft = "4px solid #d98b2b";
+      box.innerHTML = '<div class="d-flex align-items-center gap-2 mb-1">'
+        + '<span class="badge ' + tag[1] + '">' + tag[0] + '</span>'
+        + '<span class="fw-semibold">' + item.item + '</span>'
+        + '<span class="ms-auto text-secondary small">涉及金额约 ' + money(item.impact) + ' 元</span>'
+        + '</div>'
+        + '<div class="small">' + missingLabel + '：' + item.missing.join("、") + '</div>'
+        + '<div class="small text-secondary">' + item.why + '</div>'
+        + '<div class="small text-secondary">' + howLabel + '：' + item.how.join("；") + '</div>';
+      list.appendChild(box);
+    });
+
+    // 用勾选代替文件名识别：用户确认「已有」的材料直接按有材料处理
+    var names = [];
+    requests.forEach(function (item) {
+      (item.missing || []).forEach(function (name) {
+        if (names.indexOf(name) === -1) { names.push(name); }
+      });
+    });
+    var confirmList = $("confirmList");
+    confirmList.innerHTML = "";
+    names.forEach(function (name) {
+      var id = "ev-" + names.indexOf(name);
+      var wrap = document.createElement("div");
+      var questions = SCHEMA[name] || [];
+      var questionHtml = questions.map(function (item) {
+        var qid = id + "-" + item.key;
+        return '<div class="form-check ms-4">'
+          + '<input class="form-check-input q-answer" type="checkbox" data-ev="' + name
+          + '" value="' + item.key + '" id="' + qid + '">'
+          + '<label class="form-check-label small text-secondary" for="' + qid + '">'
+          + item.label + '</label></div>';
+      }).join("");
+      wrap.innerHTML = '<div class="form-check">'
+        + '<input class="form-check-input ev-ok" type="checkbox" value="' + name + '" id="' + id + '">'
+        + '<label class="form-check-label small" for="' + id + '">我已有：' + name + '</label></div>'
+        + '<div class="d-none" id="q-' + id + '">' + questionHtml + '</div>';
+      confirmList.appendChild(wrap);
+      var okBox = wrap.querySelector(".ev-ok");
+      okBox.addEventListener("change", function () {
+        var qBox = document.getElementById("q-" + id);
+        qBox.classList.toggle("d-none", !okBox.checked);
+        if (!okBox.checked) {
+          Array.prototype.slice.call(qBox.querySelectorAll("input")).forEach(function (input) {
+            input.checked = false;
+          });
+        }
+      });
+    });
+  }
+
+  function renderStrategies(strategies) {
+    var card = $("strategyCard");
+    if (!strategies.length) { card.classList.add("d-none"); return; }
+    card.classList.remove("d-none");
+    var list = $("strategyList");
+    list.innerHTML = "";
+    var color = { P0: "text-bg-danger", P1: "text-bg-warning", P2: "text-bg-secondary" };
+    strategies.forEach(function (item) {
+      var box = document.createElement("div");
+      box.className = "border rounded-3 p-3";
+      box.innerHTML = '<div class="d-flex gap-2 align-items-start">'
+        + '<span class="badge ' + (color[item.priority] || "text-bg-secondary") + '">' + item.priority + '</span>'
+        + '<div class="flex-grow-1">'
+        + '<div class="fw-semibold">' + item.action + '</div>'
+        + '<div class="small text-secondary mt-1">理由：' + item.reason + '</div>'
+        + '<div class="small text-secondary">预期：' + item.expected
+        + (item.materials && item.materials.length ? "｜需要：" + item.materials.join("、") : "")
+        + '</div></div></div>';
+      list.appendChild(box);
+    });
+  }
+
+  function renderCitations(citations) {
+    var box = $("citations");
+    if (!citations.length) { return; }
+    box.innerHTML = "";
+    citations.forEach(function (item) {
+      var grade = item.grade === "authoritative" ? ["已核验", "text-bg-success"]
+        : item.grade === "synthetic" ? ["演示数据", "text-bg-warning"] : ["未通过", "text-bg-danger"];
+      var card = document.createElement("div");
+      card.className = "border rounded-3 p-2";
+      card.innerHTML = '<div class="d-flex align-items-center gap-2">'
+        + '<span class="badge ' + grade[1] + '">' + grade[0] + '</span>'
+        + '<span class="small fw-semibold">' + item.label + '</span></div>'
+        + '<div class="small text-secondary mt-1">' + (item.note || "无说明") + '</div>';
+      box.appendChild(card);
+    });
+  }
+
+  function renderFindings(findings) {
+    var box = $("findings");
+    if (!findings.length) { return; }
+    box.innerHTML = "";
+    var color = { high: "text-bg-danger", medium: "text-bg-warning", low: "text-bg-secondary" };
+    findings.forEach(function (item) {
+      var card = document.createElement("div");
+      card.className = "border rounded-3 p-2";
+      card.innerHTML = '<div class="d-flex align-items-center gap-2">'
+        + '<span class="badge ' + (color[item.severity] || "text-bg-secondary") + '">' + item.severity + '</span>'
+        + '<span class="small fw-semibold">' + item.category + '</span></div>'
+        + '<div class="small mt-1">' + item.detail + '</div>'
+        + '<div class="small text-secondary">依据：' + item.basis + '</div>';
+      box.appendChild(card);
+    });
+  }
+
+  function parseReport(text) {
+    var sections = [];
+    var current = null;
+    (text || "").split("\n").forEach(function (line) {
+      var match = line.match(/^=====\s*(.+?)\s*=====$/);
+      if (match) {
+        current = { title: match[1], body: [] };
+        sections.push(current);
+      } else if (current) {
+        current.body.push(line);
+      }
+    });
+    return sections.map(function (item) {
+      return { title: item.title, body: item.body.join("\n").trim() };
+    });
+  }
+
+  function renderReport(report) {
+    var sections = parseReport(report);
+    var card = $("reportCard");
+    var box = $("report");
+    if (!sections.length) { card.classList.add("d-none"); return; }
+    card.classList.remove("d-none");
+    box.innerHTML = "";
+    sections.forEach(function (section, index) {
+      var details = document.createElement("details");
+      details.className = "report-section";
+      details.open = index < 3;
+      var summary = document.createElement("summary");
+      summary.textContent = section.title;
+      var pre = document.createElement("pre");
+      pre.textContent = section.body;
+      details.append(summary, pre);
+      box.appendChild(details);
+    });
+  }
+
+  function fillSample(key) {
+    var group = SAMPLES[key];
+    if (!group) { return; }
+    var sample = group[role] || group.claimant;
+    lastSampleKey = key;
+    sampleDesc = sample.desc;
+    sampleConfirmed = (sample.evidence || []).slice();
+    if (sample.region) { fillRegions(null, sample.region); }
+    $("desc").value = sample.desc;
+    if (sample.expect) { $("expectation").value = sample.expect; }
+    $("filelist").textContent = sampleConfirmed.length
+      ? "示例按「已有这些材料」处理：" + sampleConfirmed.join("、")
+        + "（换成自己的情况时请重新上传或勾选）"
+      : "示例没有附带材料，按纯口述处理。";
+    addLog(
+      "已填入示例",
+      "示例会完整跑一遍检索、引用核验、双方对抗与质证复核。",
+      "muted"
+    );
+  }
+
+  function insertTemplate() {
+    var text = TEMPLATES[role] || TEMPLATES.claimant;
+    insertedTemplate = text;
+    $("desc").value = text;
+    $("desc").focus();
+    var pos = text.indexOf(BLANK);
+    if (pos >= 0) {
+      $("desc").setSelectionRange(pos, pos + BLANK.length);
+    }
+    $("filelist").textContent =
+      "填完模板后，有材料可以上传；没有材料的项目直接删掉即可。";
+    addLog(
+      "已填入模板",
+      "把下划线处换成你的实际情况；用不上的项目整行删掉，不影响分析。",
+      "muted"
+    );
+  }
+
+  // 切换身份时，如果还没改过模板内容，就换成对应身份的模板
+  function refreshTemplateForRole() {
+    if (!insertedTemplate) { return; }
+    if ($("desc").value.trim() !== insertedTemplate.trim()) { return; }
+    insertTemplate();
+  }
+
+  function continueAnalysis() {
+    if (!currentTask) { return; }
+    var btn = $("continue");
+    btn.disabled = true;
+    $("continueSpin").classList.remove("d-none");
+    $("continueLabel").textContent = "重新分析中…";
+    readFiles($("moreFiles").files).then(function (files) {
+      var checked = Array.prototype.slice
+        .call(document.querySelectorAll("#confirmList .ev-ok:checked"))
+        .map(function (el) { return el.value; });
+      var quality = {};
+      checked.forEach(function (name) {
+        quality[name] = Array.prototype.slice
+          .call(document.querySelectorAll('#confirmList .q-answer[data-ev="' + name + '"]:checked'))
+          .map(function (el) { return el.value; });
+      });
+      var detailCount = Object.keys(quality).reduce(function (sum, key) {
+        return sum + quality[key].length;
+      }, 0);
+      addLog(
+        "补交材料",
+        "已确认 " + checked.length + " 项材料（填了 " + detailCount + " 项细节）、上传 "
+          + files.length + " 个文件，重新分析中…",
+        "muted"
+      );
+      return postJSON("/api/tasks/" + currentTask + "/evidence", {
+        note: $("moreNote").value.trim(),
+        file_names: files.map(function (item) { return item.name; }),
+        files: files,
+        confirmed: checked,
+        quality: quality
+      });
+    }).then(function () {
+      $("evidenceCard").classList.add("d-none");
+      resetStream();
+      setState("RUNNING");
+      attachStream();
+    }).catch(function (err) {
+      showError("补交失败：" + err.message);
+    }).finally(function () {
+      btn.disabled = false;
+      $("continueSpin").classList.add("d-none");
+      $("continueLabel").textContent = "补交并继续分析";
+    });
+  }
+
+  function waiveAndContinue() {
+    if (!currentTask) { return; }
+    var btn = $("waive");
+    btn.disabled = true;
+    addLog("材料说明", "已记录：这些材料暂时拿不出来，按现有情况出结论。", "muted");
+    postJSON("/api/tasks/" + currentTask + "/evidence", {
+      waive_all: true,
+      note: $("moreNote").value.trim()
+    }).then(function () {
+      $("evidenceCard").classList.add("d-none");
+      resetStream();
+      setState("RUNNING");
+      attachStream();
+    }).catch(function (err) {
+      showError("操作失败：" + err.message);
+    }).finally(function () {
+      btn.disabled = false;
+    });
+  }
+
+  renderRoles();
+  renderStages("RECEIVED");
+  setStageLabel(null, "未开始");
+  fillRegions(REGIONS_FALLBACK, DEFAULT_REGION);
+
+  fetch("/api/health")
+    .then(function (res) { return res.json(); })
+    .then(function (data) {
+      var badge = $("modelBadge");
+      if (data.llm) {
+        badge.className = "badge rounded-pill text-bg-success";
+        badge.textContent = "大模型已连接 · " + (data.model || "");
+      } else {
+        badge.className = "badge rounded-pill text-bg-danger";
+        badge.textContent = data.disabled ? "大模型已关闭 · 规则版" : "大模型未连接 · 规则版";
+      }
+    })
+    .catch(function () { /* 状态未知时保持默认文案 */ });
+
+  fetch("/api/regions")
+    .then(function (res) { return res.json(); })
+    .then(function (data) {
+      // 保留用户（或演示地址）已经选好的地区，只补齐选项列表
+      fillRegions(data.regions || [], $("region").value || data.default || DEFAULT_REGION);
+    })
+    .catch(function () { /* 接口不可用时继续用内置地区列表 */ });
+
+  fetch("/api/evidence-schema")
+    .then(function (res) { return res.json(); })
+    .then(function (data) {
+      SCHEMA = data.schema || {};
+      if (lastResult) { renderEvidence(lastResult); }
+    })
+    .catch(function () { /* 拿不到细节问题时仍可只用勾选 */ });
+
+  $("sampleCar").addEventListener("click", function () { fillSample("car"); });
+  $("sampleConsumption").addEventListener("click", function () { fillSample("consumption"); });
+  $("templateBtn").addEventListener("click", insertTemplate);
+  $("run").addEventListener("click", start);
+  $("continue").addEventListener("click", continueAnalysis);
+  $("waive").addEventListener("click", waiveAndContinue);
+  $("approve").addEventListener("click", approveAndContinue);
+  $("files").addEventListener("change", function () {
+    var names = Array.prototype.slice.call($("files").files).map(function (file) { return file.name; });
+    $("filelist").textContent = names.length
+      ? "已选择 " + names.length + " 个文件：" + names.join("、")
+      : "可多选。有票据或原件的按凭证金额认定；只有口头说明又没有凭证的，通常不予支持。";
+  });
+  // 用户改动手写案情后，示例里附带的材料不再自动计入
+  $("desc").addEventListener("input", function () {
+    if (sampleDesc && $("desc").value !== sampleDesc && sampleConfirmed.length) {
+      sampleConfirmed = [];
+      $("filelist").textContent = "已改动手写案情：示例材料不再自动计入，请按实际情况上传或勾选。";
+    }
+  });
+
+  // 演示模式：带 ?demo=car 或 ?demo=consumption 打开时自动跑一遍，便于截图与现场讲解
+  var params = new URLSearchParams(window.location.search);
+  var demoRole = params.get("role");
+  if (demoRole && ROLE_TEXT[demoRole]) {
+    role = demoRole;
+    renderRoles();
+  }
+  var demoRegion = params.get("region");
+  if (demoRegion) { fillRegions(null, demoRegion); }
+  var demoKey = params.get("demo");
+  var openTask = params.get("task");
+  if (demoKey && SAMPLES[demoKey]) {
+    fillSample(demoKey);
+    start();
+  } else if (openTask) {
+    // 用链接直接打开某次任务（便于给别人看结果，或从检查点恢复）
+    currentTask = openTask;
+    fetch("/api/tasks/" + openTask)
+      .then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (data) {
+        if (!data || !data.state) {
+          showError("没有找到任务 " + openTask + "，可能已被清理。");
+          return;
+        }
+        if (data.role && ROLE_TEXT[data.role]) {
+          role = data.role;
+          renderRoles();
+        }
+        renderResult(data);
+        var hint = $("restoreHint");
+        hint.textContent = "正在查看任务 " + openTask
+          + (data.restored ? "（从检查点恢复）" : "") + "。";
+        hint.classList.remove("d-none");
+      })
+      .catch(function () { showError("打开任务失败。"); });
+  } else if (!params.get("fresh")) {
+    restoreLastTask();
+  }
+})();
+</script>
+</body>
+</html>
