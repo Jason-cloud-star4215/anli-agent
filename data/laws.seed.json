@@ -15,7 +15,8 @@
       "误工费",
       "医疗费",
       "护理费"
-    ]
+    ],
+    "domain": "civil"
   },
   {
     "provision_id": "mfd-1173",
@@ -31,7 +32,8 @@
     "source_url": "http://www.xinhuanet.com/politics/2020-06/01/c_1126061072_7.htm",
     "effective": "2021-01-01",
     "verified": true,
-    "note": "已从权威公开来源抓取并核验"
+    "note": "已从权威公开来源抓取并核验",
+    "domain": "civil"
   },
   {
     "provision_id": "mfd-1213",
@@ -47,7 +49,8 @@
     "source_url": "http://www.xinhuanet.com/politics/2020-06/01/c_1126061072_7.htm",
     "effective": "2021-01-01",
     "verified": true,
-    "note": "已从权威公开来源抓取并核验"
+    "note": "已从权威公开来源抓取并核验",
+    "domain": "civil"
   },
   {
     "provision_id": "mfd-188",
@@ -62,7 +65,8 @@
     "source_url": "http://www.xinhuanet.com/politics/2020-06/01/c_1126061072.htm",
     "effective": "2021-01-01",
     "verified": true,
-    "note": "已从权威公开来源抓取并核验"
+    "note": "已从权威公开来源抓取并核验",
+    "domain": "civil"
   },
   {
     "provision_id": "mfd-148",
@@ -78,7 +82,8 @@
       "欺诈",
       "可撤销",
       "民事法律行为"
-    ]
+    ],
+    "domain": "civil"
   },
   {
     "provision_id": "mfd-577",
@@ -94,7 +99,8 @@
       "违约责任",
       "继续履行",
       "赔偿损失"
-    ]
+    ],
+    "domain": "civil"
   },
   {
     "provision_id": "mfd-1165",
@@ -125,7 +131,8 @@
       "精神损害赔偿",
       "人身损害",
       "严重精神损害"
-    ]
+    ],
+    "domain": "civil"
   },
   {
     "provision_id": "mfd-1184",
@@ -140,7 +147,8 @@
       "财产损失",
       "损失计算",
       "市场价格"
-    ]
+    ],
+    "domain": "civil"
   },
   {
     "provision_id": "mfd-1187",
@@ -155,7 +163,8 @@
       "赔偿费用支付",
       "分期支付",
       "担保"
-    ]
+    ],
+    "domain": "civil"
   },
   {
     "provision_id": "mfd-1208",
@@ -170,7 +179,8 @@
       "交通事故",
       "机动车",
       "道路交通安全法"
-    ]
+    ],
+    "domain": "civil"
   },
   {
     "provision_id": "xbf-55",
@@ -187,6 +197,38 @@
     "effective": "2014-03-15",
     "verified": false,
     "note": "尚未检索到该法在法库中的条目编号，正文待核验；摘要不得作为引用"
+  },
+  {
+    "provision_id": "xf-264",
+    "law_name": "中华人民共和国刑法",
+    "article": "第二百六十四条",
+    "text": "第二百六十四条盗窃公私财物，数额较大或者多次盗窃的，处三年以下有期徒刑、拘役或者管制，并处或者单处罚金；数额巨大或者有其他严重情节的，处三年以上十年以下有期徒刑，并处罚金；数额特别巨大或者有其他特别严重情节的，处十年以上有期徒刑或者无期徒刑，并处罚金或者没收财产；有下列情形之一的，处无期徒刑或者死刑，并处没收财产：（一）盗窃金融机构，数额特别巨大的；（二）盗窃珍贵文物，情节严重的。",
+    "source_url": "https://www.spp.gov.cn/spp/fl/201802/t20180206_364975.shtml",
+    "effective": "2024-03-01",
+    "verified": true,
+    "note": "已从权威公开来源抓取并核验",
+    "topics": [
+      "盗窃罪",
+      "刑事",
+      "盗窃公私财物"
+    ],
+    "domain": "criminal"
+  },
+  {
+    "provision_id": "xf-266",
+    "law_name": "中华人民共和国刑法",
+    "article": "第二百六十六条",
+    "text": "第二百六十六条诈骗公私财物，数额较大的，处三年以下有期徒刑、拘役或者管制，并处或者单处罚金；数额巨大或者有其他严重情节的，处三年以上十年以下有期徒刑，并处罚金；数额特别巨大或者有其他特别严重情节的，处十年以上有期徒刑或者无期徒刑，并处罚金或者没收财产。本法另有规定的，依照规定。",
+    "source_url": "https://www.spp.gov.cn/spp/fl/201802/t20180206_364975.shtml",
+    "effective": "2024-03-01",
+    "verified": true,
+    "note": "已从权威公开来源抓取并核验",
+    "topics": [
+      "诈骗罪",
+      "刑事",
+      "诈骗公私财物"
+    ],
+    "domain": "criminal"
   },
   {
     "provision_id": "ldzy-27",

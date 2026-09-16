@@ -26,6 +26,8 @@ class OutOfScope:
     kind: str
     matched: list[str] = field(default_factory=list)
     channels: list[str] = field(default_factory=list)
+    # 相关法条（只作为「你自己去核对」的指引，不进入任何分析结论）
+    legal_refs: list[str] = field(default_factory=list)
 
     @property
     def title(self) -> str:
@@ -41,6 +43,12 @@ class OutOfScope:
             "建议走这些渠道：",
         ]
         lines += [f"· {item}" for item in self.channels]
+        if self.legal_refs:
+            lines += [
+                "",
+                "可能涉及的法律（仅供你检索核对，本产品不对其做任何分析）：",
+            ]
+            lines += [f"· {item}" for item in self.legal_refs]
         if self.matched:
             lines += ["", "触发判断的说法（可核对）：" + "、".join(self.matched[:5])]
         return "\n".join(lines)

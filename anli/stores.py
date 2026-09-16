@@ -49,10 +49,15 @@ class LawStore:
         keywords: list[str],
         limit: int = 5,
         include_unverified: bool = False,
+        domain: str | None = "civil",
     ) -> list[LegalProvision]:
+        """按关键词检索。domain 默认只搜民事条文，传 None 表示不限域。"""
+
         hits: list[tuple[float, LegalProvision]] = []
         for item in self.provisions:
             if not include_unverified and not item.verified:
+                continue
+            if domain is not None and item.domain != domain:
                 continue
             score = _relevance(item, keywords)
             if score > 0:

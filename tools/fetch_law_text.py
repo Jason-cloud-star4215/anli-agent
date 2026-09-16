@@ -35,6 +35,18 @@ SOURCES = [
     "http://www.xinhuanet.com/politics/2020-06/01/c_1126061072.htm",
 ]
 
+# 刑事法律全文：最高人民检察院官网发布的《刑法》全文。
+# 法条库允许收刑事条文（拦停时给出准确依据），但检索按域隔离，不参与民事分析。
+CRIMINAL_SOURCES = [
+    "https://www.spp.gov.cn/spp/fl/201802/t20180206_364975.shtml",
+]
+
+# 条号 →（内容锚点，所属域）。用内容锚点定位，避免抓到「第X条的规定」这类引用句。
+DOMAIN_TARGETS: dict[str, tuple[str, str]] = {
+    "xf-264": ("第二百六十四条", "盗窃公私财物"),
+    "xf-266": ("第二百六十六条", "诈骗公私财物"),
+}
+
 # 待抓取的条文：起始标记 → 下一条标记
 TARGETS = {
     "mfd-148": ("第一百四十八条", "第一百四十九条"),
@@ -82,6 +94,26 @@ def extract_article(text: str, start: str, end: str) -> str | None:
     return segment
 
 
+def extract_by_anchor(text: str, article: str, anchor: str) -> str | None:
+    """按「条号 + 紧随其后的内容锚点」定位正文，避开「第X条的规定」这类引用。
+
+    例：刑法第二百六十六条的正文以「诈骗公私财物」开头，
+    而文中还有「……依照本法第二百六十六条的规定定罪处罚」这种引用句。
+    """
+
+    for match in re.finditer(re.escape(article), text):
+        after = text[match.end() : match.end() + 20].lstrip("　 ，、")
+        if not after.startswith(anchor):
+            continue
+        tail = text[match.end() :]
+        following = re.search(
+            r"第[一二三四五六七八九十百零]+条(?:之[一二三四五六七八九十]+)?", tail
+        )
+        end = match.end() + following.start() if following else min(len(text), match.end() + 600)
+        return text[match.start() : end]
+    return None
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="抓取并核验法条正文")
     parser.add_argument("--write", action="store_true", help="写回 data/laws.seed.json")
@@ -108,6 +140,26 @@ def main(argv: list[str] | None = None) -> int:
                 hit_count += 1
         print(f"{'HIT ' if hit_count else 'MISS'} {url} :: 命中 {hit_count} 条")
 
+    # 刑事域：同一套核验流程，但来源与抽取方式不同
+    for url in CRIMINAL_SOURCES:
+        try:
+            html = fetch(url)
+        except Exception as exc:  # noqa: BLE001
+            print(f"ERR  {url} :: {exc}")
+            continue
+        if not html:
+            continue
+        text = re.sub(r"\s+", "", to_plain_text(html))
+        hit_count = 0
+        for provision_id, (article, anchor) in DOMAIN_TARGETS.items():
+            if provision_id in found:
+                continue
+            body = extract_by_anchor(text, article, anchor)
+            if body:
+                found[provision_id] = (body, url)
+                hit_count += 1
+        print(f"{'HIT ' if hit_count else 'MISS'} {url} :: 命中 {hit_count} 条（刑事域）")
+
     if not found:
         print("未从任何来源抓到条文正文。")
         return 1
@@ -130,6 +182,7 @@ def main(argv: list[str] | None = None) -> int:
         item["source_url"] = hit[1]
         item["verified"] = True
         item["note"] = "已从权威公开来源抓取并核验"
+        item["domain"] = "criminal" if item["provision_id"] in DOMAIN_TARGETS else "civil"
         updated += 1
     LAW_FILE.write_text(
         json.dumps(provisions, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"

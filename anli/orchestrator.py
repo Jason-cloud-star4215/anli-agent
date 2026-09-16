@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import asdict
 from datetime import date
 
@@ -103,11 +104,13 @@ class Orchestrator:
             # 红线：刑事、行政案件不出分析结论，直接停下并给求助渠道（确认也不能继续）
             scope = detect_out_of_scope(profile.description or profile.summary)
             if scope is not None:
+                scope.legal_refs = self._out_of_scope_refs(scope)
                 body = scope.render()
                 record.extra["out_of_scope"] = {
                     "kind": scope.kind,
                     "matched": scope.matched,
                     "channels": scope.channels,
+                    "legal_refs": scope.legal_refs,
                 }
                 record.extra["summary"] = body
                 record.artifacts = [
@@ -441,6 +444,23 @@ class Orchestrator:
         """修订的是用户这一侧的方案；法官视角下按主张方口径整理。"""
 
         return Role.DEFENDANT if role == Role.DEFENDANT else Role.CLAIMANT
+
+    def _out_of_scope_refs(self, scope) -> list[str]:
+        """在刑事 / 行政域里找相关条文，只作「你去核对」的指引，不做分析。"""
+
+        domain = "criminal" if scope.kind == "刑事" else "administrative"
+        hits = self.law_store.search(
+            list(scope.matched), limit=3, domain=domain
+        )
+        refs: list[str] = []
+        for item in hits:
+            snippet = re.sub(
+                r"^第[一二三四五六七八九十百零]+条(?:之[一二三四五六七八九十]+)?", "", item.text
+            )
+            refs.append(
+                f"{item.label}（{snippet[:44]}…，来源：{item.source_url or '内置法条库'}）"
+            )
+        return refs
 
     @staticmethod
     def _open_findings(findings: list[CriticFinding]) -> list[CriticFinding]:

@@ -46,7 +46,12 @@ class Severity(str, Enum):
 
 @dataclass
 class LegalProvision:
-    """结构化法条。只有 verified=True 的条文可以进入交付物。"""
+    """结构化法条。只有 verified=True 的条文可以进入交付物。
+
+    domain 用来隔离检索域：民事（civil）/ 刑事（criminal）/ 行政（administrative）。
+    法条库允许收刑事、行政条文（拦停时能给出准确依据），
+    但民事检索只会在 civil 域里搜，避免刑事条文混进民事引用。
+    """
 
     provision_id: str
     law_name: str
@@ -57,6 +62,7 @@ class LegalProvision:
     verified: bool = False
     note: str = ""
     topics: list[str] = field(default_factory=list)
+    domain: str = "civil"
 
     @property
     def label(self) -> str:

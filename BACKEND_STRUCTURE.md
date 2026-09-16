@@ -330,6 +330,31 @@ provisional = False → 输出结论性估算
 - 前端对话区把每轮的「你提交了什么」与「系统这一轮的结论」成对展示，用户因此能看懂
   「为什么这一轮还不给结论」。
 
+### 5.15 语料分域：法条标域、案例只收民事（2026-09-17 新增）
+
+原则：**法条库可以脏，交付物不能脏**。语料收全一点有价值，安全性靠交付物闸门保证。
+
+```
+法条库 LegalProvision.domain ∈ { civil, criminal, administrative }
+   ├── 民事检索：LawStore.search() 默认 domain="civil"，刑事条文永远搜不到
+   ├── 拦停引用：只读 criminal / administrative 域，且注明「不对其做任何分析」
+   └── 交付物：引用核验只认 verified=True 的条文（原规则不变）
+
+类案库 CaseStore
+   ├── cases.seed.json        演示样本（synthetic，全程标注）
+   └── cases.official.json    真实案例，抓取时即剔除刑事 / 行政案例
+```
+
+为什么类案必须筛、法条可以不筛：
+
+- 类案是**比较对象**，刑事案例的裁判要点（定罪量刑）无法作为民事赔偿的参照，
+  混在一起会让用户误判"刑事不构成 → 民事也不用赔"；
+- 法条是**依据文本**，拦停时能准确说出「这属于《刑法》第二百六十六条」比只说"超出范围"更有用，
+  而且分域检索 + 核验闸门保证它不会出现在民事结论里。
+
+实现位置：`anli/models.py::LegalProvision.domain`、`anli/stores.py::LawStore.search(domain=...)`、
+`anli/orchestrator.py::_out_of_scope_refs()`、`tools/fetch_cases.py::excluded_from_library()`。
+
 ## 6. 错误与恢复
 
 | 情况 | 处理 |
