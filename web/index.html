@@ -151,6 +151,18 @@
     to { opacity: 1; transform: translateY(0); }
   }
 
+  /* 对话区：用户与系统的往来消息 */
+  .chat-log { max-height: 420px; overflow-y: auto; }
+  .chat-msg { border-radius: var(--radius); padding: 10px 12px; font-size: .8125rem; }
+  .chat-msg.system { background: var(--surface-soft); border: 1px solid var(--line-soft); }
+  .chat-msg.user { background: var(--brand-soft); border: 1px solid #d7e3f0; }
+  .chat-msg .who {
+    font-size: .72rem; color: var(--ink-mute); margin-bottom: 4px;
+    display: flex; gap: 6px; align-items: center;
+  }
+  .chat-msg .body { color: var(--ink); white-space: pre-wrap; word-break: break-word; }
+  .chat-msg .files { font-size: .75rem; color: var(--ink-soft); margin-top: 6px; }
+
   .stat {
     border-radius: var(--radius); background: var(--surface-soft);
     padding: var(--space-3) 14px; height: 100%;
@@ -323,6 +335,7 @@
       <div class="card mb-3 d-none" id="summaryCard">
         <div class="card-header">结论摘要</div>
         <div class="card-body">
+          <div class="alert alert-danger py-2 px-3 small d-none" id="gateNotice"></div>
           <div class="alert alert-warning py-2 px-3 small d-none" id="demoNotice"></div>
           <div class="alert alert-light border py-2 px-3 small d-none" id="understanding"></div>
           <p class="mb-3" id="summaryText"></p>
@@ -338,33 +351,33 @@
         </div>
         <div class="card-body">
           <div id="evidenceList" class="vstack gap-2"></div>
-          <hr>
-          <div class="row g-2">
-            <div class="col-12">
-              <div class="form-label mb-1">我手上已经有这些材料</div>
-              <div class="form-text mt-0 mb-2">勾选后系统直接按「已有材料」计入，不依赖文件名识别。</div>
-              <div id="confirmList" class="vstack gap-1"></div>
-            </div>
-            <div class="col-12">
-              <label class="form-label" for="moreFiles">补交材料</label>
-              <input class="form-control" type="file" id="moreFiles" multiple>
-            </div>
-            <div class="col-12">
-              <label class="form-label" for="moreNote">补充说明</label>
-              <textarea class="form-control" id="moreNote" rows="2"
-                placeholder="例如：误工费实际减少收入 4000 元"></textarea>
-            </div>
-            <div class="col-12">
-              <button class="btn btn-warning w-100" id="continue">
-                <span class="spinner-border spinner-border-sm me-2 d-none" id="continueSpin"></span>
-                <span id="continueLabel">补交并继续分析</span>
-              </button>
-            </div>
-            <div class="col-12">
-              <button class="btn btn-outline-secondary w-100" id="waive">
-                这些材料我拿不出来，直接按现有情况给结论
-              </button>
-            </div>
+        </div>
+      </div>
+
+      <!-- 对话区：看得见自己提交了什么，证据不足时在这里继续第 2、第 3 轮 -->
+      <div class="card mb-3 d-none" id="chatCard">
+        <div class="card-header d-flex align-items-center">
+          <span>对话与补交</span>
+          <span class="badge text-bg-light border ms-auto" id="roundBadge">第 1 轮</span>
+        </div>
+        <div class="card-body">
+          <div id="chatLog" class="chat-log vstack gap-2 mb-3"></div>
+          <div class="border rounded-3 p-3">
+            <div class="form-label mb-1">我手上已经有这些材料</div>
+            <div class="form-text mt-0 mb-2">勾选后系统直接按「已有材料」计入，不依赖文件名识别。</div>
+            <div id="confirmList" class="vstack gap-1 mb-3"></div>
+            <label class="form-label" for="moreFiles">补交文件</label>
+            <input class="form-control mb-3" type="file" id="moreFiles" multiple>
+            <label class="form-label" for="moreNote">补充说明</label>
+            <textarea class="form-control mb-3" id="moreNote" rows="3"
+              placeholder="例如：误工费实际减少收入 4000 元；或说明某项材料确实拿不出来"></textarea>
+            <button class="btn btn-warning w-100" id="continue">
+              <span class="spinner-border spinner-border-sm me-2 d-none" id="continueSpin"></span>
+              <span id="continueLabel">发送并继续分析</span>
+            </button>
+            <button class="btn btn-outline-secondary w-100 mt-2" id="waive">
+              这些材料我拿不出来，直接按现有情况给结论
+            </button>
           </div>
         </div>
       </div>
@@ -963,6 +976,16 @@
     element.style.animationDelay = (delay || 0) + "ms";
   }
 
+  // 打开页面时也用同一套滑入动画，别让首屏是硬邦邦地弹出来
+  function revealAllCards() {
+    var cards = document.querySelectorAll("main .card");
+    Array.prototype.slice.call(cards).forEach(function (card, index) {
+      if (card.classList.contains("d-none")) { return; }
+      card.classList.add("reveal-up");
+      card.style.animationDelay = Math.min(index * 55, 600) + "ms";
+    });
+  }
+
   // 列表项逐条浮现
   function staggerItems(container, step) {
     if (!container) { return; }
@@ -1044,6 +1067,7 @@
     resetStream();
     $("summaryCard").classList.add("d-none");
     $("evidenceCard").classList.add("d-none");
+    $("chatCard").classList.add("d-none");
     $("strategyCard").classList.add("d-none");
     $("reportCard").classList.add("d-none");
     $("citations").innerHTML = '<div class="empty">分析完成后显示法条与类案来源。</div>';
@@ -1147,15 +1171,28 @@
     }
     renderOfflineNotice(data);
     renderDemoNotice(a, data.understanding);
+    renderGateNotice(a);
     var statRow = $("statRow");
     var labels = (ROLE_TEXT[role] || ROLE_TEXT.claimant).stats;
     statRow.innerHTML = "";
     if (a) {
+      var capText = "约 " + money(a.legal_cap) + " 元";
+      var capHint = "按现有材料的估算口径";
+      var likelyText = rangeText(a.likely_low, a.likely_high);
+      var likelyHint = "同类中位数 " + money(a.case_median) + " 元 · "
+        + (a.sample_note || ("样本 " + a.sample_size + " 件"));
+      if (a.provisional) {
+        // 证据闸门：不把估算数字当成结论摆出来
+        capText = "待补证";
+        capHint = "证据充分度 " + Math.round((a.sufficiency || 0) * 100) + "%";
+        likelyText = "暂不定";
+        likelyHint = "补齐后可参考 " + rangeText(a.likely_low, a.likely_high)
+          + " · 样本 " + a.sample_size + " 件";
+      }
       var cards = [
         [labels[0], money(a.expectation) + " 元", "用户自己提出的数额"],
-        [labels[1], "约 " + money(a.legal_cap) + " 元", "按现有材料的估算口径"],
-        [labels[2], rangeText(a.likely_low, a.likely_high),
-          "同类中位数 " + money(a.case_median) + " 元 · " + (a.sample_note || ("样本 " + a.sample_size + " 件"))]
+        [labels[1], capText, capHint],
+        [labels[2], likelyText, likelyHint]
       ];
       cards.forEach(function (item) {
         var col = document.createElement("div");
@@ -1178,6 +1215,7 @@
     renderOfficialChecks(data.law_sources || []);
     renderOfficialCases(data.official_cases || []);
     renderEvidence(data);
+    renderChat(data);
     renderStrategies(data.strategies || []);
     renderCitations(data.citations || []);
     renderFindings(data.findings || []);
@@ -1186,6 +1224,7 @@
     revealCard($("humanCard"), 0);
     revealCard($("summaryCard"), 60);
     revealCard($("evidenceCard"), 140);
+    revealCard($("chatCard"), 180);
     revealCard($("strategyCard"), 220);
     revealCard($("reportCard"), 300);
     staggerItems($("evidenceList"), 70);
@@ -1216,6 +1255,16 @@
   }
 
   // 掉线提示：走规则版时必须说清楚，不能让用户以为是大模型给的结论
+  // 证据闸门：证据不充分时不把估算数字当结论摆出来
+  function renderGateNotice(a) {
+    var box = $("gateNotice");
+    if (!a || !a.provisional) { box.classList.add("d-none"); return; }
+    box.classList.remove("d-none");
+    box.textContent = "证据闸门：证据充分度仅 " + Math.round((a.sufficiency || 0) * 100)
+      + "%，约 " + money(a.blocked_amount) + " 元因缺证据未计入。"
+      + "在你补齐材料之前，系统不给出结论性的赔付数字；下方显示的是参考口径。";
+  }
+
   function renderOfflineNotice(data) {
     var box = $("offlineNotice");
     var status = data.llm_status;
@@ -1490,6 +1539,82 @@
     });
   }
 
+  // 对话区：让用户看得见自己提交了什么，并在证据不足时继续第 2、第 3 轮
+  function renderChat(data) {
+    var card = $("chatCard");
+    var rounds = data.rounds || [];
+    if (!rounds.length) { card.classList.add("d-none"); return; }
+    card.classList.remove("d-none");
+    $("roundBadge").textContent = "已进行 " + rounds.length + " 轮"
+      + (data.max_rounds ? "（最多 " + data.max_rounds + " 轮）" : "");
+    var log = $("chatLog");
+    log.innerHTML = "";
+    rounds.forEach(function (item) {
+      log.appendChild(chatMessage("user", item));
+      var reply = systemReplyFor(data, item);
+      if (reply) { log.appendChild(chatMessage("system", reply)); }
+    });
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function chatMessage(kind, payload) {
+    var box = document.createElement("div");
+    box.className = "chat-msg " + kind + " reveal-up";
+    var who = document.createElement("div");
+    who.className = "who";
+    who.textContent = kind === "user"
+      ? "你 · 第 " + payload.round + " 轮提交"
+        + (payload.at ? "（" + String(payload.at).slice(11, 16) + "）" : "")
+      : (payload.who || "案理");
+    var body = document.createElement("div");
+    body.className = "body";
+    body.textContent = payload.message || "（这一轮没有文字说明）";
+    box.appendChild(who);
+    box.appendChild(body);
+    var meta = [];
+    if (payload.files && payload.files.length) { meta.push("文件：" + payload.files.join("、")); }
+    if (payload.confirmed && payload.confirmed.length) {
+      meta.push("勾选为已有材料：" + payload.confirmed.join("、"));
+    }
+    if (payload.waived) { meta.push("已说明：这些材料暂时拿不出来"); }
+    if (meta.length) {
+      var files = document.createElement("div");
+      files.className = "files";
+      files.textContent = meta.join(" ｜ ");
+      box.appendChild(files);
+    }
+    return box;
+  }
+
+  // 系统在每一轮之后说了什么：证据够就出结论，不够就列清单并要求下一轮
+  function systemReplyFor(data, roundEntry) {
+    var rounds = data.rounds || [];
+    var isLast = rounds.indexOf(roundEntry) === rounds.length - 1;
+    if (!isLast) {
+      return { who: "案理", message: "已收到这一轮补充，基于当时的证据重新评估过一轮。" };
+    }
+    var requests = data.evidence_request || [];
+    if (requests.length) {
+      var lines = ["这一轮的证据还不够，先不给你结论性的赔付数字。还差这几项："];
+      requests.forEach(function (item, index) {
+        lines.push(
+          (index + 1) + "．" + item.item + "｜涉及约 " + money(item.impact) + " 元｜缺："
+          + ((item.missing || []).join("、") || "相关材料")
+        );
+      });
+      lines.push("");
+      lines.push("补充后我重新算一遍；确实拿不出来的也可以直接说明，我会按现有材料给结论。");
+      return {
+        who: "案理 · 第 " + roundEntry.round + " 轮结论（待补证）",
+        message: lines.join("\n")
+      };
+    }
+    return {
+      who: "案理 · 第 " + roundEntry.round + " 轮结论",
+      message: "这一轮的材料已经够用，完整结论见上方「结论摘要」，逐项依据见「完整报告」。"
+    };
+  }
+
   function renderStrategies(strategies) {
     var card = $("strategyCard");
     if (!strategies.length) { card.classList.add("d-none"); return; }
@@ -1655,6 +1780,7 @@
         "muted"
       );
       return postJSON("/api/tasks/" + currentTask + "/evidence", {
+        message: $("moreNote").value.trim(),
         note: $("moreNote").value.trim(),
         file_names: files.map(function (item) { return item.name; }),
         files: files,
@@ -1662,7 +1788,6 @@
         quality: quality
       });
     }).then(function () {
-      $("evidenceCard").classList.add("d-none");
       resetStream();
       setState("RUNNING");
       attachStream();
@@ -1682,9 +1807,9 @@
     addLog("材料说明", "已记录：这些材料暂时拿不出来，按现有情况出结论。", "muted");
     postJSON("/api/tasks/" + currentTask + "/evidence", {
       waive_all: true,
-      note: $("moreNote").value.trim()
+      note: $("moreNote").value.trim(),
+      message: $("moreNote").value.trim()
     }).then(function () {
-      $("evidenceCard").classList.add("d-none");
       resetStream();
       setState("RUNNING");
       attachStream();
@@ -1699,6 +1824,7 @@
   renderStages("RECEIVED");
   setStageLabel(null, "未开始");
   fillRegions(REGIONS_FALLBACK, DEFAULT_REGION);
+  revealAllCards();
 
   fetch("/api/health")
     .then(function (res) { return res.json(); })

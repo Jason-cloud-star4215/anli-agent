@@ -15,13 +15,21 @@ from .models import CaseProfile, FeasibilityAssessment, Role
 
 
 def format_range(low: float | None, high: float | None) -> str:
-    """区间展示：上限等于下限时显示单值，避免出现「899–899」这种写法。"""
+    """区间展示（不带「约」）：上限等于下限时显示单值，避免出现「899–899」。"""
 
     if low is None or high is None:
         return "无数据"
     if round(low) == round(high):
-        return f"约 {low:.0f}"
+        return f"{low:.0f}"
     return f"{low:.0f}–{high:.0f}"
+
+
+def approx_range(low: float | None, high: float | None) -> str:
+    """带「约」的区间，金额统一估算口径。"""
+
+    if low is None or high is None:
+        return "无数据"
+    return f"约 {format_range(low, high)} 元"
 
 
 def approx(value: float | None) -> str:
@@ -404,22 +412,55 @@ def render_summary(
         Role.JUDGE: "本案标的",
     }[role]
 
-    if assessment.likely_high is None:
+    applies = bool((profile.extra or {}).get("responsibility_applies", True))
+    basis = "按现有证据与责任比例" if applies else "按现有证据（该案由不按责任比例分摊）"
+    case_text = format_range(assessment.case_low, assessment.case_high)
+    likely_text = approx_range(assessment.likely_low, assessment.likely_high)
+    sufficiency_text = f"{assessment.sufficiency:.0%}"
+    blocked_text = f"约 {assessment.blocked_amount:.0f} 元"
+
+    if assessment.provisional:
+        # 证据闸门：证据不充分时不下结论性赔付数字，只说明「补齐后可参考多少」
+        if role == Role.DEFENDANT:
+            conclusion = "对方举证还不充分，现在谈赔付多少为时过早"
+            numbers = (
+                f"对方主张 {assessment.expectation:.0f} 元，但对方目前举证不充分"
+                f"（证据充分度 {sufficiency_text}），其中{blocked_text}的主张缺少证据支撑。"
+                f"在对方补齐之前，你暂不需要预估赔付（{likely_text}）；"
+                f"对方补齐后可能被支持{approx(assessment.legal_cap)}，"
+                f"同类案例通常判约 {case_text} 元（样本 {assessment.sample_size} 件）。"
+            )
+        elif role == Role.JUDGE:
+            conclusion = "证据不充分，事实尚未查清，暂不宜确定裁判区间"
+            numbers = (
+                f"标的 {assessment.expectation:.0f} 元，证据充分度仅 {sufficiency_text}，"
+                f"{blocked_text}缺少证据支撑。补齐举证后再定区间；"
+                f"当前仅作参考：可支持{approx(assessment.legal_cap)}，"
+                f"同类案例通常判约 {case_text} 元（样本 {assessment.sample_size} 件）。"
+            )
+        else:
+            conclusion = "证据还不充分，先别急着算能拿多少"
+            numbers = (
+                f"你提出 {assessment.expectation:.0f} 元，但目前证据充分度只有 "
+                f"{sufficiency_text}，{blocked_text}缺材料支撑。"
+                f"在补齐之前，系统不给结论性的可支持金额；"
+                f"补齐后可参考{likely_text}，同类案件在证据齐备时通常判约 {case_text} 元"
+                f"（样本 {assessment.sample_size} 件）。"
+            )
+    elif assessment.likely_high is None:
         conclusion = "同类案例样本不足，暂时只能给出法定层面的判断"
         numbers = f"{label}为 {assessment.expectation:.0f} 元，但缺少可比案例，无法判断现实落点。"
     else:
-        case_text = format_range(assessment.case_low, assessment.case_high)
-        likely_text = format_range(assessment.likely_low, assessment.likely_high)
         if role == Role.DEFENDANT:
             if assessment.expectation > assessment.likely_high:
                 conclusion = "对方的主张明显偏高，你有抗辩空间"
             else:
                 conclusion = "对方的主张基本在合理区间内，抗辩空间有限"
             numbers = (
-                f"对方主张 {assessment.expectation:.0f} 元，按现有证据与责任比例，"
+                f"对方主张 {assessment.expectation:.0f} 元，{basis}，"
                 f"可能被支持的{approx(assessment.legal_cap)}；同类案例通常判约 {case_text} 元"
                 f"（中位数 {assessment.case_median:.0f} 元，样本 {assessment.sample_size} 件），"
-                f"你的合理赔付预期约 {likely_text} 元。"
+                f"你的合理赔付预期{likely_text}。"
             )
         elif role == Role.JUDGE:
             conclusion = "本案事实与证据的争点已经比较清楚"
@@ -427,7 +468,7 @@ def render_summary(
                 f"标的 {assessment.expectation:.0f} 元，按现有证据可支持"
                 f"{approx(assessment.legal_cap)}；"
                 f"同类案例通常判约 {case_text} 元（中位数 {assessment.case_median:.0f} 元，"
-                f"样本 {assessment.sample_size} 件），合理裁判区间{likely_text} 元。"
+                f"样本 {assessment.sample_size} 件），合理裁判区间{likely_text}。"
             )
         else:
             if assessment.expectation_supported:
@@ -446,8 +487,8 @@ def render_summary(
                     f"你提出 {assessment.expectation:.0f} 元，按现有证据可支持"
                     f"{approx(assessment.legal_cap)}；"
                     f"同类案件在证据齐备时通常判约 {case_text} 元（中位数 {assessment.case_median:.0f} 元，"
-                    f"样本 {assessment.sample_size} 件），受你的证据和责任比例限制，"
-                    f"最可能落点约 {likely_text} 元。"
+                    f"样本 {assessment.sample_size} 件），{basis}的限制下，"
+                    f"最可能落点{likely_text}。"
                 )
 
     gap_lines = []

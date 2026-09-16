@@ -16,6 +16,7 @@ import uuid
 import webbrowser
 import base64
 from dataclasses import asdict
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -49,6 +50,8 @@ SAMPLES = {
 
 TASKS: dict[str, dict] = {}
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024
+# 对话轮次上限：初始提交算第 1 轮，之后最多再补 3 轮
+MAX_ROUNDS = 4
 _INDEX_CACHE: dict[str, str] = {}
 TASK_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
 
@@ -112,6 +115,8 @@ def build_view(record, report: str = "", error: str = "") -> dict:
         "human_channels": record.extra.get("human_channels", []) if record else [],
         "out_of_scope": (record.extra.get("out_of_scope") or None) if record else None,
         "revisions": record.extra.get("revisions", []) if record else [],
+        "rounds": record.extra.get("rounds", []) if record else [],
+        "max_rounds": MAX_ROUNDS,
         "approved": bool(record.extra.get("approved")) if record else False,
     }
 
@@ -219,6 +224,8 @@ def _run_task(
             expectation=expectation,
             approved=approved,
         )
+        # 把对话历史挂到结果上：前端要显示「我提交了什么」，检查点也要能恢复
+        record.extra["rounds"] = [dict(item) for item in TASKS[task_id].get("rounds", [])]
         # 记录这次到底是「大模型版」「规则版」还是「配置了但没调通」
         calls = int(record.extra.get("llm_calls") or 0)
         failures = int(record.extra.get("llm_failures") or 0)
@@ -294,6 +301,20 @@ def _start_task(
         },
     }
     TASKS[task_id]["request"] = request
+    # 第 1 轮 = 初次提交；后续轮次由补交接口追加，避免重复计数
+    rounds = TASKS[task_id].setdefault("rounds", [])
+    if not rounds:
+        rounds.append(
+            {
+                "round": 1,
+                "message": description,
+                "files": list(evidence_names),
+                "confirmed": list(confirmed_evidence or []),
+                "region": region or DEFAULT_REGION,
+                "role": role,
+                "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            }
+        )
     threading.Thread(
         target=_run_task,
         args=(
@@ -462,6 +483,17 @@ class Handler(BaseHTTPRequestHandler):
         if not task or "request" not in task:
             self._json({"code": 404, "msg": "任务不存在"}, status=404)
             return
+        rounds = task.get("rounds") or []
+        if len(rounds) >= MAX_ROUNDS:
+            self._json(
+                {
+                    "code": 400,
+                    "msg": f"已经补交 {len(rounds) - 1} 轮，达到上限（{MAX_ROUNDS - 1} 轮）。"
+                    "如仍有新材料，请新建一次咨询。",
+                },
+                status=400,
+            )
+            return
         length = int(self.headers.get("Content-Length") or 0)
         payload = json.loads(self.rfile.read(length) or b"{}")
         saved = self._save_uploads(task_id, payload.get("files") or [])
@@ -496,9 +528,20 @@ class Handler(BaseHTTPRequestHandler):
             request["waived_evidence"] = sorted(
                 set(list(request.get("waived_evidence") or []) + gaps)
             )
-        note = (payload.get("note") or "").strip()
+        note = (payload.get("note") or payload.get("message") or "").strip()
         if note:
             request["description"] = f"{request['description']}\n补充说明：{note}"
+        rounds.append(
+            {
+                "round": len(rounds) + 1,
+                "message": note,
+                "files": list(saved.get("names") or []),
+                "confirmed": [str(name) for name in (payload.get("confirmed") or [])],
+                "waived": bool(payload.get("waive_all")),
+                "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            }
+        )
+        task["rounds"] = rounds
         _start_task(task_id, **request)
         self._json({"code": 0, "task_id": task_id})
 

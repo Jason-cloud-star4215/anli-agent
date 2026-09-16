@@ -92,6 +92,19 @@ class ViewSnapshotTest(unittest.TestCase):
         record.extra["llm_status"] = "online"
         self.assertEqual(web.build_view(record, report)["llm_status"], "online")
 
+    def test_view_exposes_rounds_for_the_chat_area(self):
+        """对话区靠 rounds 渲染：视图必须带轮次记录与上限。"""
+
+        record, report = run_task("resume-rounds")
+        record.extra["rounds"] = [
+            {"round": 1, "message": "案情描述", "files": ["医疗费发票.jpg"], "at": "2026-09-16T10:00:00+00:00"},
+            {"round": 2, "message": "补交误工证明", "files": [], "at": "2026-09-16T10:05:00+00:00"},
+        ]
+        view = web.build_view(record, report)
+        self.assertEqual(len(view["rounds"]), 2)
+        self.assertEqual(view["rounds"][1]["round"], 2)
+        self.assertEqual(view["max_rounds"], web.MAX_ROUNDS)
+
 
 if __name__ == "__main__":
     unittest.main()

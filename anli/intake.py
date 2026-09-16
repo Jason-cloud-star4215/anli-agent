@@ -80,6 +80,21 @@ RESPONSIBILITY_PATTERNS = [
     (["次要责任", "次责"], 0.3),
 ]
 
+# 只有按过错分担责任的案由才谈「责任比例」。
+# 消费维权按退一赔三处理、劳动争议按工资标准处理，都不存在责任比例分摊，
+# 硬套一个百分比会把结论算错（例如把消费案的可支持金额打五折）。
+RESPONSIBILITY_APPLIES: dict[str, bool] = {
+    "交通事故人身损害赔偿": True,
+    "消费维权": False,
+    "劳动争议": False,
+    "租赁纠纷": True,
+    "民间借贷": False,
+}
+
+
+def responsibility_applies(cause: str) -> bool:
+    return RESPONSIBILITY_APPLIES.get(cause, True)
+
 AMOUNT_UNITS = {"万": 10000.0, "千": 1000.0, "元": 1.0, "块": 1.0}
 
 # 出现这些字样，才算「有书面材料」，而不只是嘴上提到
@@ -94,7 +109,10 @@ def classify_cause(text: str) -> str:
     return best if scores[best] > 0 else "一般民事纠纷"
 
 
-def parse_responsibility(text: str) -> float:
+def parse_responsibility(text: str, cause: str = "") -> float:
+    if cause and not responsibility_applies(cause):
+        # 该案由不按责任比例分摊，一律按 100% 处理
+        return 1.0
     for keywords, ratio in RESPONSIBILITY_PATTERNS:
         if any(keyword in text for keyword in keywords):
             return ratio
@@ -152,7 +170,11 @@ ITEM_ALIASES: dict[str, dict[str, list[str]]] = {
         "伤残赔偿金": ["伤残赔偿金", "残疾赔偿金"],
     },
     "消费维权": {
-        "商品价款": ["商品价款", "手机花了", "买的时候花了", "一共花了", "花了"],
+        # 被告视角常说「订单金额 / 商品金额 / 货款」，这些同样指商品价款
+        "商品价款": [
+            "商品价款", "订单金额", "商品金额", "货款", "手机花了",
+            "买的时候花了", "一共花了", "花了",
+        ],
         # 只认明确写出金额的说法；「退一赔三」按商品价款三倍推算，避免把总诉求重复计一遍
         "惩罚性赔偿": ["三倍赔偿", "惩罚性赔偿", "三倍价款"],
     },
@@ -284,7 +306,7 @@ def build_profile(
         cause=cause,
         description=text,
         region=region,
-        responsibility_ratio=parse_responsibility(text),
+        responsibility_ratio=parse_responsibility(text, cause),
         timeline=[],
         disputed_points=_disputed_points(cause, blocked),
         available_evidence=sorted(evidence),
@@ -298,6 +320,8 @@ def build_profile(
             ),
             "quality_answers": dict(quality_answers or {}),
             "sufficiency": sufficiency(item_findings),
+            # 该案由是否适用责任比例（消费维权、劳动争议不适用）
+            "responsibility_applies": responsibility_applies(cause),
         },
         claim_items=supported,
         blocked_items=blocked,

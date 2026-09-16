@@ -172,6 +172,11 @@ class FeasibilityAssessment:
     region_sample_size: int = 0
     cross_region_sample_size: int = 0
     synthetic_sample_size: int = 0
+    # 证据闸门：证据不充分时不给结论性赔付数字，只给「补齐后可参考」
+    sufficiency: float = 1.0
+    blocked_amount: float = 0.0
+    claimed_amount: float = 0.0
+    provisional: bool = False
 
     @property
     def expectation_supported(self) -> bool:
@@ -182,6 +187,12 @@ class FeasibilityAssessment:
     @property
     def has_synthetic(self) -> bool:
         return self.synthetic_sample_size > 0
+
+    @property
+    def conclusion_ready(self) -> bool:
+        """证据是否足以支撑结论性数字。"""
+
+        return not self.provisional
 
     @property
     def sample_note(self) -> str:

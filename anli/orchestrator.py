@@ -40,7 +40,7 @@ from .scope import (
     human_review_artifact,
     human_review_reasons,
 )
-from .strategy import build_strategies, format_range, render_summary
+from .strategy import approx_range, build_strategies, format_range, render_summary
 from .tools import ToolCall, ToolRouter
 from .tools_builtin import build_default_registry
 
@@ -265,6 +265,14 @@ class Orchestrator:
                 cases=cases,
                 responsibility_ratio=profile.responsibility_ratio,
                 region=profile.region,
+                sufficiency=float((profile.extra or {}).get("sufficiency", 1.0)),
+                blocked_amount=sum(
+                    float(info.get("amount") or 0) for info in blocked.values()
+                ),
+                claimed_amount=sum(
+                    float(getattr(item, "claimed", 0) or 0)
+                    for item in (profile.item_findings or [])
+                ),
                 expectation_label={
                     Role.DEFENDANT: "对方主张金额",
                     Role.JUDGE: "标的金额",
@@ -734,7 +742,12 @@ class Orchestrator:
                         f"你的原话：{profile.description or profile.summary}",
                         f"案情理解方式：{'大模型抽取' if profile.intake_source == 'llm' else '规则抽取'}",
                         f"争议焦点：{'、'.join(profile.disputed_points)}",
-                        f"责任比例：{profile.responsibility_ratio:.0%}",
+                        (
+                            f"责任比例：{profile.responsibility_ratio:.0%}"
+                            if (profile.extra or {}).get("responsibility_applies", True)
+                            else "责任比例：不适用（该案由不按责任比例分摊，按 100% 计）"
+                        ),
+                        f"已提交材料：{'、'.join(profile.available_evidence) or '无'}",
                         "时间线：" + ("；".join(profile.timeline) or "未从描述中识别"),
                     ]
                 ),
@@ -751,12 +764,31 @@ class Orchestrator:
                 Role.JUDGE: ("本案标的", "按现有证据可支持", "合理裁判区间"),
                 Role.CLAIMANT: ("你的期望", "按现有证据可支持", "最可能落点"),
             }[record.role]
-            feasible = "可以支持" if assessment.expectation_supported else "与预期存在差距"
+            if assessment.provisional:
+                feasible = "暂不下结论（待补证）"
+            else:
+                feasible = "可以支持" if assessment.expectation_supported else "与预期存在差距"
             region_line = (
                 f"适用地区：{assessment.region}（本地区样本 {assessment.region_sample_size} 件）"
                 if assessment.region
                 else "适用地区：未指定"
             )
+            gate_line = (
+                f"结论状态：证据不充分（充分度 {assessment.sufficiency:.0%}，"
+                f"约 {assessment.blocked_amount:.0f} 元因缺证据未计入），"
+                "本次不给结论性的赔付数字，补齐证据后重新评估"
+                if assessment.provisional
+                else f"结论状态：证据充分度 {assessment.sufficiency:.0%}，可给出结论性估算"
+            )
+            likely_text = approx_range(assessment.likely_low, assessment.likely_high)
+            if assessment.provisional:
+                cap_line = (
+                    f"{labels[1]}：待补证（按现有证据约 {assessment.legal_cap:.0f} 元）"
+                )
+                likely_line = f"{labels[2]}：暂不定（证据补齐后可参考{likely_text}）"
+            else:
+                cap_line = f"{labels[1]}：约 {assessment.legal_cap:.0f} 元"
+                likely_line = f"{labels[2]}：{likely_text}"
             artifacts.append(
                 Artifact(
                     kind="feasibility",
@@ -764,7 +796,7 @@ class Orchestrator:
                     body="\n".join(
                         [
                             f"{labels[0]}：{assessment.expectation:.0f} 元",
-                            f"{labels[1]}：约 {assessment.legal_cap:.0f} 元",
+                            cap_line,
                             f"同类案例区间：约 {format_range(assessment.case_low, assessment.case_high)} 元"
                             f"（中位数 {_fmt(assessment.case_median)} 元，样本 {assessment.sample_size} 件）",
                             region_line,
@@ -774,8 +806,9 @@ class Orchestrator:
                                 if assessment.has_synthetic
                                 else "样本性质：真实来源案例"
                             ),
-                            f"{labels[2]}：约 {format_range(assessment.likely_low, assessment.likely_high)} 元",
+                            likely_line,
                             f"结论：{labels[0]}{feasible}",
+                            gate_line,
                             "金额口径：以上除「期望 / 主张 / 标的」外的数字都是按现有材料的估算约数，"
                             "实际结果取决于证据与裁判。",
                             "差距原因：" + ("；".join(assessment.gap_reasons) or "无"),

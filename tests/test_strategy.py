@@ -6,7 +6,7 @@ from anli.orchestrator import Orchestrator
 from anli.scenarios import car_accident_expectation, car_accident_profile
 from anli.state import StateStore
 from anli.stores import CaseStore, LawStore
-from anli.strategy import build_strategies, format_range, render_summary
+from anli.strategy import approx_range, build_strategies, format_range, render_summary
 
 DATA = Path(__file__).resolve().parent.parent / "data"
 
@@ -57,9 +57,11 @@ class StrategyTest(unittest.TestCase):
         self.assertTrue(all(item.priority in {"P0", "P1", "P2"} for item in strategies))
 
     def test_range_format_handles_single_value(self):
-        self.assertEqual(format_range(899, 899), "约 899")
+        self.assertEqual(format_range(899, 899), "899")
         self.assertEqual(format_range(1000, 2000), "1000–2000")
         self.assertEqual(format_range(None, None), "无数据")
+        self.assertEqual(approx_range(899, 899), "约 899 元")
+        self.assertEqual(approx_range(1000, 2000), "约 1000–2000 元")
 
     def test_unquantified_item_becomes_first_step(self):
         profile = CaseProfile(

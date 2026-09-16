@@ -12,6 +12,7 @@ from .intake import (
     CLAIM_RULES,
     EVIDENCE_VOCAB,
     ITEM_ALIASES,
+    responsibility_applies,
     _disputed_points,
     build_profile,
     classify_cause,
@@ -138,12 +139,16 @@ def profile_from_payload(
             unquantified.append(item)
 
     ratio = payload.get("responsibility_ratio")
-    try:
-        ratio_value = float(ratio)
-        if not 0 < ratio_value <= 1:
-            ratio_value = parse_responsibility(description)
-    except (TypeError, ValueError):
-        ratio_value = parse_responsibility(description)
+    if not responsibility_applies(cause):
+        # 消费维权、劳动争议不按责任比例分摊：模型给的百分比一律忽略
+        ratio_value = 1.0
+    else:
+        try:
+            ratio_value = float(ratio)
+            if not 0 < ratio_value <= 1:
+                ratio_value = parse_responsibility(description, cause)
+        except (TypeError, ValueError):
+            ratio_value = parse_responsibility(description, cause)
 
     expectation = payload.get("expectation")
     try:
@@ -188,6 +193,7 @@ def profile_from_payload(
             ),
             "quality_answers": dict(quality_answers or {}),
             "sufficiency": sufficiency(item_findings),
+            "responsibility_applies": responsibility_applies(cause),
         },
     )
 

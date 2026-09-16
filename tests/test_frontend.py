@@ -172,6 +172,27 @@ class FrontendTest(unittest.TestCase):
         self.assertIn('"约 " + money(a.legal_cap)', self.html)
         self.assertIn('return "约 " + money(low)', self.html)
 
+    def test_page_reveals_cards_on_load(self):
+        """首屏也要有滑入动画，不能只有结果页有。"""
+
+        self.assertIn("revealAllCards", self.html)
+        self.assertIn("main .card", self.html)
+
+    def test_chat_area_exists(self):
+        """要有对话区：看得见提交内容，并能继续第 2、第 3 轮。"""
+
+        for element in ["chatCard", "chatLog", "roundBadge", "gateNotice"]:
+            self.assertIn(f'id="{element}"', self.html)
+        self.assertIn("renderChat", self.html)
+        self.assertIn("systemReplyFor", self.html)
+        self.assertIn("第 1 轮", self.html)
+
+    def test_evidence_gate_blocks_conclusion_in_ui(self):
+        """证据不足时金额卡显示「待补证 / 暂不定」。"""
+
+        self.assertIn('capText = "待补证"', self.html)
+        self.assertIn('likelyText = "暂不定"', self.html)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -11,6 +11,10 @@ import statistics
 from .models import CaseRecord, FeasibilityAssessment
 
 MIN_SAMPLE = 3
+# 证据闸门：充分度低于这个值，或未计入金额占比超过另一条线，
+# 就不给结论性的赔付数字，只给「补齐后可参考」的区间
+MIN_SUFFICIENCY = 0.7
+MAX_BLOCKED_SHARE = 0.4
 
 
 def amount_range(amounts: list[float]) -> tuple[float | None, float | None, float | None]:
@@ -41,6 +45,9 @@ def build_assessment(
     uplift_paths: list[str] | None = None,
     expectation_label: str = "期望金额",
     region: str = "",
+    sufficiency: float = 1.0,
+    blocked_amount: float = 0.0,
+    claimed_amount: float = 0.0,
 ) -> FeasibilityAssessment:
     """生成诉求可行性评估。
 
@@ -87,6 +94,13 @@ def build_assessment(
         reasons.append(
             f"区间数据中有 {synthetic_sample_size} 件为演示数据，仅用于演示检索与计算流程"
         )
+    blocked_share = (blocked_amount / claimed_amount) if claimed_amount > 0 else 0.0
+    provisional = sufficiency < MIN_SUFFICIENCY or blocked_share >= MAX_BLOCKED_SHARE
+    if provisional:
+        reasons.append(
+            f"证据充分度 {sufficiency:.0%}，约 {blocked_amount:.0f} 元因缺证据未计入；"
+            "证据补齐前系统不给结论性的赔付数字"
+        )
     if expectation > cap:
         reasons.append(f"{expectation_label}超过按现有证据计算的法定上限 {_round(cap)} 元")
 
@@ -106,4 +120,8 @@ def build_assessment(
         region_sample_size=region_sample_size,
         cross_region_sample_size=cross_region_sample_size,
         synthetic_sample_size=synthetic_sample_size,
+        sufficiency=round(sufficiency, 3),
+        blocked_amount=round(blocked_amount, 2),
+        claimed_amount=round(claimed_amount, 2),
+        provisional=provisional,
     )
