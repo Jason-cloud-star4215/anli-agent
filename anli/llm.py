@@ -141,7 +141,7 @@ class LLMClient:
         user: str,
         temperature: float = 0.1,
         max_tokens: int = 1500,
-        retries: int = 1,
+        retries: int = 2,
     ) -> dict:
         """要求模型只输出 JSON，并解析成字典。解析失败会重试一次。"""
 

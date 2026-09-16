@@ -706,6 +706,7 @@
   };
 
   var role = "claimant";
+  var MODEL_NAME = "";
   var lastSampleKey = null;
   var sampleConfirmed = [];
   var sampleDesc = "";
@@ -1110,6 +1111,8 @@
     setRunning(true);
     $("guideCard").classList.add("d-none");
     resetStream();
+    // 开新任务时先清掉上一次的掉线横幅，等本次跑完再按本次结果重设
+    $("offlineNotice").classList.add("d-none");
     $("summaryCard").classList.add("d-none");
     $("evidenceCard").classList.add("d-none");
     $("chatCard").classList.add("d-none");
@@ -1255,7 +1258,9 @@
     }
     $("metaLine").textContent = "适用地区：" + ((data.understanding && data.understanding.region) || regionValue())
       + " · 案情理解方式：" + (data.intake_source === "llm" ? "大模型抽取" : "规则抽取")
-      + " · 模型调用 " + (data.llm_calls || 0) + " 次"
+      + (data.llm_status === "skipped"
+        ? " · 本次未调用大模型（流程提前结束）"
+        : " · 模型调用 " + (data.llm_calls || 0) + " 次")
       + (data.llm_failures ? "（失败 " + data.llm_failures + " 次）" : "")
       + " · 证据充分度 "
       + (typeof data.evidence_sufficiency === "number"
@@ -1304,6 +1309,31 @@
   }
 
   // 掉线提示：走规则版时必须说清楚，不能让用户以为是大模型给的结论
+  // 模型徽章与掉线提示必须由同一个状态驱动，否则会出现「已连接 + 已掉线」自相矛盾
+  function setModelBadge(status, text, fromLastRun) {
+    var badge = $("modelBadge");
+    var notice = $("offlineNotice");
+    var table = {
+      online: ["text-bg-success", "大模型已连接" + (MODEL_NAME ? " · " + MODEL_NAME : "")],
+      configured: ["text-bg-secondary", "大模型已配置 · 待运行验证"],
+      skipped: ["text-bg-secondary", "大模型已配置（本次未调用）"],
+      degraded: ["text-bg-danger", "大模型调用失败 · 已退回规则版"],
+      offline: ["text-bg-danger", "大模型未连接 · 规则版"]
+    };
+    var info = table[status] || ["text-bg-secondary", "模型状态未知"];
+    badge.className = "badge rounded-pill " + info[0];
+    badge.textContent = info[1];
+    badge.title = text || "";
+    if (status === "degraded" || status === "offline") {
+      notice.classList.remove("d-none");
+      // 来自上一次运行的结果要说明是「上次」，否则换场景时会以为这次也掉线了
+      notice.textContent = (fromLastRun ? "上次运行：" : "已掉线：") + (text || info[1])
+        + "。规则版仍会完成检索、引用核验与金额计算，但论证与措辞比大模型版弱。";
+    } else {
+      notice.classList.add("d-none");
+    }
+  }
+
   // 证据闸门：证据不充分时不把估算数字当结论摆出来
   function renderGateNotice(a) {
     var box = $("gateNotice");
@@ -1315,12 +1345,9 @@
   }
 
   function renderOfflineNotice(data) {
-    var box = $("offlineNotice");
-    var status = data.llm_status;
-    if (!status || status === "online") { box.classList.add("d-none"); return; }
-    box.classList.remove("d-none");
-    box.textContent = "已掉线：" + (data.llm_status_text || "本次为规则版分析（未连接大模型）")
-      + "。规则版仍会完成检索、引用核验与金额计算，但论证与措辞比大模型版弱。";
+    // 徽章与横幅共用同一个状态：既然徽章显示「已连接」，横幅就不能说「已掉线」
+    if (!data.llm_status) { return; }
+    setModelBadge(data.llm_status, data.llm_status_text || "", false);
   }
 
   function renderDemoNotice(a, understanding) {
@@ -1887,26 +1914,14 @@
   fetch("/api/health")
     .then(function (res) { return res.json(); })
     .then(function (data) {
-      var badge = $("modelBadge");
+      MODEL_NAME = data.model || "";
       // 版本徽章：用来区分「页面是新的还是旧的缓存」
       var versionBadge = $("versionBadge");
       versionBadge.textContent = "v" + (data.version || "?");
       versionBadge.title = "页面与服务端版本号；两边不一致说明浏览器用的是旧页面，按 Ctrl+F5 强制刷新";
-      if (data.llm) {
-        badge.className = "badge rounded-pill text-bg-success";
-        badge.textContent = "大模型已连接 · " + (data.model || "");
-      } else {
-        badge.className = "badge rounded-pill text-bg-danger";
-        badge.textContent = data.disabled ? "大模型已关闭 · 规则版" : "大模型未连接 · 规则版";
-        // 开跑前就提示，别等分析完才发现走的是规则版
-        var box = $("offlineNotice");
-        box.classList.remove("d-none");
-        box.textContent = "已掉线："
-          + (data.disabled
-            ? "大模型已用 ANLI_DISABLE_LLM=1 关闭"
-            : "未连接大模型（未配置密钥或服务不可用）")
-          + "，接下来这次分析会用规则版完成。";
-      }
+      // 状态以「最近一次真实运行」优先：密钥配着但调用失败时，不能显示「已连接」
+      var lastText = (data.last_run && data.last_run.text) || "";
+      setModelBadge(data.status || (data.llm ? "configured" : "offline"), lastText, true);
     })
     .catch(function () { /* 状态未知时保持默认文案 */ });
 

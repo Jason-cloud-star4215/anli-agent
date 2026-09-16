@@ -106,5 +106,51 @@ class ViewSnapshotTest(unittest.TestCase):
         self.assertEqual(view["max_rounds"], web.MAX_ROUNDS)
 
 
+class LlmStatusTest(unittest.TestCase):
+    """模型状态判定：不能把「提前结束没调模型」说成「调用全部失败」。"""
+
+    def test_offline_when_not_configured(self):
+        status, text = web.llm_status_for(False, 0, 0, False)
+        self.assertEqual(status, "offline")
+        self.assertIn("未连接大模型", text)
+
+    def test_skipped_when_flow_ends_before_calling(self):
+        """刑事案件、信息不足：一次都没调过模型，是 skipped 而不是 degraded。"""
+
+        for stopped in (True, False):
+            status, text = web.llm_status_for(True, 0, 0, stopped)
+            self.assertEqual(status, "skipped")
+            self.assertIn("未使用大模型", text)
+
+    def test_degraded_only_when_calls_actually_failed(self):
+        status, text = web.llm_status_for(True, 0, 5, False)
+        self.assertEqual(status, "degraded")
+        self.assertIn("全部失败", text)
+        status, text = web.llm_status_for(True, 5, 2, False)
+        self.assertEqual(status, "degraded")
+        self.assertIn("2 次调用失败", text)
+
+    def test_online_when_all_calls_succeed(self):
+        status, text = web.llm_status_for(True, 8, 0, False)
+        self.assertEqual(status, "online")
+        self.assertIn("调用 8 次", text)
+
+    def test_health_prefers_last_run_result(self):
+        """最近一次真实运行失败后，健康检查不能还报「已连接」。"""
+
+        original = dict(web.LAST_LLM_RUN)
+        try:
+            web.LAST_LLM_RUN.clear()
+            web.LAST_LLM_RUN.update({"status": "degraded", "text": "调用失败"})
+            payload = web.health_payload()
+            self.assertEqual(payload["status"], "degraded")
+            self.assertTrue(payload["configured"])
+            web.LAST_LLM_RUN.update({"status": "skipped", "text": "提前结束"})
+            self.assertEqual(web.health_payload()["status"], "skipped")
+        finally:
+            web.LAST_LLM_RUN.clear()
+            web.LAST_LLM_RUN.update(original)
+
+
 if __name__ == "__main__":
     unittest.main()

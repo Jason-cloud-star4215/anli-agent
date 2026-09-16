@@ -26,7 +26,7 @@ from .evidence_chain import QUALITY_QUESTIONS
 from .intake import extract_expectation
 from .llm import LLMClient, candidate_env_files
 from .llm_intake import build_profile_llm
-from .models import Role
+from .models import Role, TaskState
 from .orchestrator import Orchestrator
 from .paths import resource_path, user_root
 from .retrieval_flk import LawSourceChecker
@@ -50,6 +50,9 @@ SAMPLES = {
 }
 
 TASKS: dict[str, dict] = {}
+# 最近一次任务的模型使用结果：用于页面刷新后仍能显示真实状态
+# （/api/health 只能判断「有没有配置密钥」，测不出连通性）
+LAST_LLM_RUN: dict = {}
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024
 # 对话轮次上限：初始提交算第 1 轮，之后最多再补 3 轮
 MAX_ROUNDS = 4
@@ -180,6 +183,78 @@ def _load_checkpoint(task_id: str) -> dict | None:
     return view if isinstance(view, dict) else None
 
 
+def health_payload() -> dict:
+    """健康检查：把「配置层」和「运行层」两个状态一起给出。
+
+    只看「有没有密钥」会自相矛盾：密钥配着但调用全失败时，
+    页面会同时显示「大模型已连接」和「已掉线」。所以这里把最近一次真实运行的结果带上，
+    运行层优先——最近一次跑失败了，就不要宣称已连接。
+    """
+
+    disabled = os.environ.get("ANLI_DISABLE_LLM") == "1"
+    llm = None if disabled else LLMClient()
+    last = dict(LAST_LLM_RUN) if LAST_LLM_RUN else None
+    configured = bool(llm and llm.available)
+    if disabled:
+        status = "offline"
+    elif last and last.get("status") in {"degraded", "offline"}:
+        status = last["status"]
+    elif last and last.get("status") == "online":
+        status = "online"
+    elif last and last.get("status") == "skipped":
+        # 上次任务是「提前结束、没调模型」：既不是掉线，也还没验证过连通性
+        status = "skipped"
+    elif configured:
+        status = "configured"
+    else:
+        status = "offline"
+    return {
+        "code": 0,
+        "version": __version__,
+        "llm": configured,
+        "configured": configured,
+        "disabled": disabled,
+        "status": status,
+        "model": llm.model if llm else "",
+        "last_run": last,
+        "env_files": [str(item) for item in candidate_env_files()],
+        "data_dir": str(user_root()),
+    }
+
+
+def llm_status_for(
+    llm_configured: bool, calls: int, failures: int, stopped_early: bool
+) -> tuple[str, str]:
+    """判定一次任务的模型使用状态，返回 (status, 说明文字)。
+
+    status 取值：
+    - `offline`    未配置密钥 / 已用 ANLI_DISABLE_LLM=1 关闭；
+    - `degraded`   发起了调用但有失败；
+    - `skipped`    **一次调用都没发起**（流程在调模型之前就结束了，例如超范围拦停、信息不足）；
+    - `online`     调用成功且没有失败。
+
+    `skipped` 是这次修的关键：刑事案件、信息不足这类"提前结束"的任务，
+    llm_calls 同样是 0，之前被误判成「大模型调用全部失败，已自动退回规则版」，
+    于是页面一边显示「大模型已连接」、一边显示「已掉线」，自相矛盾。
+    """
+
+    if not llm_configured:
+        return "offline", "未连接大模型（未配置密钥或已用 ANLI_DISABLE_LLM=1 关闭），本次为规则版分析"
+    if failures:
+        return (
+            "degraded",
+            f"大模型有 {failures} 次调用失败，相关环节已退回规则版；其余 {calls} 次调用正常"
+            if calls
+            else "大模型调用全部失败，已自动退回规则版分析；请检查密钥、网络或模型名",
+        )
+    if calls == 0:
+        return (
+            "skipped",
+            "本次流程在调用大模型之前就结束了（例如超出覆盖范围或信息不足），未使用大模型",
+        )
+    return "online", f"大模型版分析（调用 {calls} 次）"
+
+
 def _load_checkpoint_payload(task_id: str) -> dict | None:
     """取回检查点里保存的整份 payload（视图 + 原始请求参数）。"""
 
@@ -235,30 +310,27 @@ def _run_task(
         )
         # 把对话历史挂到结果上：前端要显示「我提交了什么」，检查点也要能恢复
         record.extra["rounds"] = [dict(item) for item in TASKS[task_id].get("rounds", [])]
-        # 记录这次到底是「大模型版」「规则版」还是「配置了但没调通」
+        # 记录这次到底是「大模型版」「规则版」「提前结束没用模型」还是「配置了但没调通」
         calls = int(record.extra.get("llm_calls") or 0)
         failures = int(record.extra.get("llm_failures") or 0)
-        if llm is None:
-            record.extra["llm_status"] = "offline"
-            record.extra["llm_status_text"] = (
-                "未连接大模型（未配置密钥或已用 ANLI_DISABLE_LLM=1 关闭），"
-                "本次为规则版分析"
-            )
-        elif calls == 0:
-            record.extra["llm_status"] = "degraded"
-            record.extra["llm_status_text"] = (
-                "大模型调用全部失败，已自动退回规则版分析；"
-                "请检查密钥、网络或模型名"
-            )
-        elif failures:
-            record.extra["llm_status"] = "degraded"
-            record.extra["llm_status_text"] = (
-                f"大模型有 {failures} 次调用失败，相关环节已退回规则版；"
-                f"其余 {calls} 次调用正常"
-            )
-        else:
-            record.extra["llm_status"] = "online"
-            record.extra["llm_status_text"] = f"大模型版分析（调用 {calls} 次）"
+        status, status_text = llm_status_for(
+            llm_configured=llm is not None,
+            calls=calls,
+            failures=failures,
+            stopped_early=bool(record.extra.get("out_of_scope"))
+            or record.state == TaskState.NEEDS_HUMAN,
+        )
+        record.extra["llm_status"] = status
+        record.extra["llm_status_text"] = status_text
+        LAST_LLM_RUN.update(
+            {
+                "status": record.extra["llm_status"],
+                "text": record.extra["llm_status_text"],
+                "calls": calls,
+                "failures": failures,
+                "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            }
+        )
         TASKS[task_id]["record"] = record
         TASKS[task_id]["report"] = orchestrator.render_report(record)
         # 检查点存一份前端视图：服务重启后仍能取回这次任务的结果
@@ -371,18 +443,7 @@ class Handler(BaseHTTPRequestHandler):
                 }
             )
         elif path == "/api/health":
-            llm = None if os.environ.get("ANLI_DISABLE_LLM") == "1" else LLMClient()
-            self._json(
-                {
-                    "code": 0,
-                    "version": __version__,
-                    "llm": bool(llm and llm.available),
-                    "model": llm.model if llm else "",
-                    "disabled": os.environ.get("ANLI_DISABLE_LLM") == "1",
-                    "env_files": [str(item) for item in candidate_env_files()],
-                    "data_dir": str(user_root()),
-                }
-            )
+            self._json(health_payload())
         elif path == "/api/evidence-schema":
             self._json({"code": 0, "schema": QUALITY_QUESTIONS})
         elif path == "/api/regions":
