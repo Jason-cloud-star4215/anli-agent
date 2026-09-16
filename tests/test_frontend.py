@@ -202,6 +202,31 @@ class FrontendTest(unittest.TestCase):
         self.assertIn('out_of_scope: "超出覆盖范围提示"', self.html)
         self.assertIn('human_review: "转人工提示"', self.html)
 
+    def test_every_sample_has_all_three_roles(self):
+        """示例必须按身份分开写：被告不能看到原告口吻的案情（曾经回退到主张方版本）。"""
+
+        markers = [
+            # 大额索赔示例：三种身份各一份说法
+            "我要求对方一共赔90万元",
+            "对方要求我赔偿90万元，我认为金额太高",
+            "原告目前仍在住院，医疗费8万元",
+            # 刑事案件示例：三种身份各一份说法
+            "我表哥因为涉嫌诈骗罪被刑事拘留了",
+            "有人向公安报案说我涉嫌合同诈骗",
+            "一起涉嫌诈骗罪的案件正在审查起诉阶段",
+        ]
+        for marker in markers:
+            self.assertIn(marker, self.html, marker)
+        # 角色版本缺失时要显式提示回退，而不是默默给主张方视角
+        self.assertIn("该示例暂无当前身份的版本，显示的是主张方视角", self.html)
+
+    def test_template_button_switches_with_role(self):
+        """模板按身份区分，并在未手动改动时随身份切换。"""
+
+        self.assertIn("refreshTemplateForRole", self.html)
+        for marker in ["【对方的主张】", "【我认为不合理的部分】", "【被告抗辩】", "【案件概况】"]:
+            self.assertIn(marker, self.html, marker)
+
 
 if __name__ == "__main__":
     unittest.main()
