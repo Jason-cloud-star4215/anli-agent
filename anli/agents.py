@@ -86,7 +86,7 @@ class BaseAgent:
         if failures > failures_before:
             self.bus.emit(
                 "llm_state",
-                "",
+                self._task_id,
                 {
                     "status": "degraded",
                     "text": f"大模型第 {failures} 次调用失败，该环节已退回规则版",
@@ -97,7 +97,7 @@ class BaseAgent:
             self._llm_ok_reported = True
             self.bus.emit(
                 "llm_state",
-                "",
+                self._task_id,
                 {"status": "online", "text": f"大模型调用正常（已调用 {calls} 次）"},
             )
 

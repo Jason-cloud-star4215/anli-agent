@@ -31,6 +31,7 @@ from .orchestrator import Orchestrator
 from .paths import resource_path, user_root
 from .retrieval_flk import LawSourceChecker
 from .regions import DEFAULT_REGION, REGIONS, normalize_region
+from .scope import detect_out_of_scope
 from .scenarios import (
     car_accident_description,
     car_accident_files,
@@ -155,7 +156,9 @@ def render_index() -> str:
     return html
 
 
-def _build_orchestrator(on_event, llm=None) -> Orchestrator:
+def _build_orchestrator(
+    on_event, llm=None, llm_configured: bool | None = None
+) -> Orchestrator:
     # 官方库核对：离线环境用 ANLI_DISABLE_WEB=1 关掉，此时干脆不注册该工具
     checker = None
     if os.environ.get("ANLI_DISABLE_WEB") != "1":
@@ -168,6 +171,7 @@ def _build_orchestrator(on_event, llm=None) -> Orchestrator:
         state_store=StateStore(ROOT / "state"),
         llm=llm,
         law_checker=checker,
+        llm_configured=llm_configured,
     )
     orchestrator.subscribe(on_event)
     return orchestrator
@@ -255,6 +259,20 @@ def llm_status_for(
     return "online", f"大模型版分析（调用 {calls} 次）"
 
 
+def plan_intake(description: str) -> tuple[bool, str]:
+    """开跑前先判断：这次要不要调用大模型做案情理解。
+
+    超范围（刑事/行政）的咨询在分析阶段一定会被拦停，
+    那就没必要先花一次模型调用去做案情理解——直接走规则版理解 + 拦停提示。
+    这样「本次未调用大模型」这句话从一开始就是真的，不用等跑完才知道。
+    """
+
+    scope = detect_out_of_scope(description or "")
+    if scope is not None:
+        return False, f"判定为{scope.kind}案件，直接在进入分析前拦停，不调用大模型"
+    return True, ""
+
+
 def _load_checkpoint_payload(task_id: str) -> dict | None:
     """取回检查点里保存的整份 payload（视图 + 原始请求参数）。"""
 
@@ -290,7 +308,14 @@ def _run_task(
             llm = LLMClient()
             if not llm.available:
                 llm = None
-        orchestrator = _build_orchestrator(on_event, llm=llm)
+        # 开跑前先判断这次到底要不要调用大模型（超范围案件不浪费调用）
+        configured = llm is not None
+        use_llm, skip_reason = plan_intake(description)
+        if not use_llm:
+            llm = None
+        orchestrator = _build_orchestrator(
+            on_event, llm=llm, llm_configured=configured
+        )
         profile = build_profile_llm(
             description,
             evidence_names,
@@ -301,6 +326,15 @@ def _run_task(
             quality_answers=quality_answers or {},
             waive_all=waive_all,
         )
+        if skip_reason:
+            profile.extra["intake_note"] = skip_reason
+        else:
+            # 「这次会调用大模型」在开跑瞬间就已经确定，直接告诉前端，不等第一次调用返回
+            orchestrator.bus.emit(
+                "llm_state",
+                task_id,
+                {"status": "calling", "text": "本次将调用大模型理解案情"},
+            )
         if not expectation:
             expectation = profile.extra.get("expectation") or extract_expectation(description)
         record = orchestrator.run(
@@ -316,7 +350,7 @@ def _run_task(
         calls = int(record.extra.get("llm_calls") or 0)
         failures = int(record.extra.get("llm_failures") or 0)
         status, status_text = llm_status_for(
-            llm_configured=llm is not None,
+            llm_configured=bool(record.extra.get("llm_configured", llm is not None)),
             calls=calls,
             failures=failures,
             stopped_early=bool(record.extra.get("out_of_scope"))

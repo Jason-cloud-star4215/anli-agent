@@ -65,6 +65,7 @@ class Orchestrator:
         bus: EventBus | None = None,
         llm=None,
         law_checker=None,
+        llm_configured: bool | None = None,
     ) -> None:
         self.law_store = law_store
         self.case_store = case_store
@@ -75,6 +76,10 @@ class Orchestrator:
         self.bus = bus or EventBus()
         self.budget = Budget()
         self.llm = llm
+        # 「配了密钥但这次选择不调用」和「压根没配密钥」是两回事，不能都算掉线
+        self.llm_configured = (
+            (llm is not None) if llm_configured is None else bool(llm_configured)
+        )
 
     # ------------------------------------------------------------------ 对外入口
     def run(
@@ -649,6 +654,7 @@ class Orchestrator:
 
         record.extra["llm_calls"] = getattr(self.llm, "calls", 0) if self.llm else 0
         record.extra["llm_failures"] = getattr(self.llm, "failures", 0) if self.llm else 0
+        record.extra["llm_configured"] = self.llm_configured
 
     def _emit_llm_state_on_stop(self, task_id: str, reason: str) -> None:
         """流程在「调模型之前」结束时，立刻把真实状态推给前端。
@@ -662,7 +668,7 @@ class Orchestrator:
     def _stopped_llm_state(self, reason: str) -> dict:
         calls = getattr(self.llm, "calls", 0) if self.llm else 0
         failures = getattr(self.llm, "failures", 0) if self.llm else 0
-        if self.llm is None:
+        if not self.llm_configured:
             return {"status": "offline", "text": "未配置大模型，本次为规则版流程"}
         if failures and not calls:
             return {

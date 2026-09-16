@@ -152,5 +152,53 @@ class LlmStatusTest(unittest.TestCase):
             web.LAST_LLM_RUN.update(original)
 
 
+class PlanIntakeTest(unittest.TestCase):
+    """开跑前就判断这次要不要调用大模型：超范围案件不浪费调用。"""
+
+    def test_out_of_scope_cases_skip_the_model(self):
+        for text in [
+            "我表哥因为涉嫌诈骗罪被刑事拘留了，现在案子已经到检察院。",
+            "我对城管局的行政处罚决定不服，已经收到行政处罚决定书。",
+        ]:
+            use_llm, reason = web.plan_intake(text)
+            self.assertFalse(use_llm, text)
+            self.assertIn("不调用大模型", reason)
+
+    def test_civil_cases_use_the_model(self):
+        use_llm, reason = web.plan_intake(
+            "我骑电动车被一辆小轿车撞了，交警认定对方主要责任。"
+        )
+        self.assertTrue(use_llm)
+        self.assertEqual(reason, "")
+
+    def test_configured_but_skipped_is_not_offline(self):
+        """配了密钥但本次选择不调用，不能说成「未连接」，也不能说成「分析中」。"""
+
+        status, text = web.llm_status_for(True, 0, 0, True)
+        self.assertEqual(status, "skipped")
+        self.assertIn("未使用大模型", text)
+
+    def test_badge_states_never_claim_running(self):
+        """徽章不允许出现「分析中」这类臆测状态（用户明确否掉了）。"""
+
+        page = (Path(__file__).resolve().parent.parent / "web" / "index.src.html").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("本次分析中", page)
+        self.assertIn('intake_only: ["text-bg-secondary", "大模型已配置（仅用于理解案情）"]', page)
+        self.assertIn("setModelBadge(payload.status", page)
+        self.assertIn('calling: ["text-bg-secondary", "大模型已配置 · 本次将调用"]', page)
+
+    def test_server_announces_call_decision_at_start(self):
+        """「本次会不会调用」在开跑瞬间就要推给前端，而不是等第一次调用返回。"""
+
+        source = (Path(__file__).resolve().parent.parent / "anli" / "web.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('"status": "calling"', source)
+        self.assertIn("本次将调用大模型理解案情", source)
+        self.assertIn("def plan_intake", source)
+
+
 if __name__ == "__main__":
     unittest.main()
