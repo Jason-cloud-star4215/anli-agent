@@ -63,6 +63,10 @@ def build_view(record, report: str = "", error: str = "") -> dict:
     human_pending = bool(
         record and record.extra.get("human_review") and not record.extra.get("approved")
     )
+    # 超出覆盖范围（刑事/行政）：连「民事分析」的字段都不返回。
+    # 之前这里会把「案由：一般民事纠纷 / 责任比例：100% / 争议焦点」这类民事分析
+    # 一起发给前端，等于对刑事案件做了民事分析，既没意义也踩红线。
+    out_of_scope = bool(record and record.extra.get("out_of_scope"))
     return {
         "code": 0,
         "state": record.state.value,
@@ -70,19 +74,21 @@ def build_view(record, report: str = "", error: str = "") -> dict:
         "error": error,
         "summary": record.extra.get("summary", "") if record else "",
         "strategies": []
-        if human_pending
+        if human_pending or out_of_scope
         else [
             asdict(item) for item in (record.extra.get("strategies") or [])
         ]
         if record
         else [],
         "assessment": asdict(record.assessment)
-        if record and record.assessment
+        if record and record.assessment and not out_of_scope
         else None,
         "item_findings": [
             asdict(item)
             for item in (record.profile.item_findings if record and record.profile else [])
-        ],
+        ]
+        if not out_of_scope
+        else [],
         "understanding": {
             "cause": record.profile.cause,
             "region": record.profile.region or DEFAULT_REGION,
@@ -95,9 +101,11 @@ def build_view(record, report: str = "", error: str = "") -> dict:
             "timeline": record.profile.timeline,
             "disputed_points": record.profile.disputed_points,
         }
-        if record and record.profile
+        if record and record.profile and not out_of_scope
         else None,
-        "evidence_request": record.extra.get("evidence_request", []) if record else [],
+        "evidence_request": record.extra.get("evidence_request", [])
+        if record and not out_of_scope
+        else [],
         "law_sources": record.extra.get("law_sources", []) if record else [],
         "official_cases": record.extra.get("official_cases", []) if record else [],
         "evidence_sufficiency": record.extra.get("evidence_sufficiency")

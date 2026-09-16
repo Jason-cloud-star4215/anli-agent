@@ -355,6 +355,21 @@ provisional = False → 输出结论性估算
 实现位置：`anli/models.py::LegalProvision.domain`、`anli/stores.py::LawStore.search(domain=...)`、
 `anli/orchestrator.py::_out_of_scope_refs()`、`tools/fetch_cases.py::excluded_from_library()`。
 
+**超范围案件的返回视图（2026-09-17 修）**：刑事 / 行政案件连「民事分析」字段都不返回——
+`build_view` 会把 `understanding`、`assessment`、`item_findings`、`evidence_request`、`strategies`
+全部置空。此前这些字段照常下发，前端就会对一起刑事案件显示「案由：一般民事纠纷 / 责任比例：100% /
+争议焦点：责任划分」，等于对刑事做了民事分析，既没意义也踩红线。
+前端同时把该卡片标题从「结论摘要」改成「处理结果（不出具分析结论）」。
+
+**行政域现状（诚实标注）**：`行政复议法`、`行政处罚法` 两部法已登记为 `domain=administrative`，
+但**正文尚未核验**（`verified: false`），因此不会被引用，也不会出现在检索结果里。
+本环境试过的权威来源全部不可用：国家法律法规数据库只给条号不给正文（正文在 oss 内网地址），
+人大网/政府网/最高检站点的全文页在本环境 404 或为通用占位页，新闻类站点链接亦不可达。
+因此行政拦停目前只给「法律名称 + 常见期限」，并注明「具体条文以官方文本为准」——
+宁可少说，也不编条号。一旦找到可达的权威全文，把 URL 加进 `tools/fetch_law_text.py` 的
+`CRIMINAL_SOURCES`（可改名 `DOMAIN_SOURCES`）并跑一次 `--write`，两条登记会自动核验入库，
+拦停提示也会自动带上条号。
+
 ## 6. 错误与恢复
 
 | 情况 | 处理 |

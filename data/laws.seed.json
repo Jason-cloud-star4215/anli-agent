@@ -231,6 +231,30 @@
     "domain": "criminal"
   },
   {
+    "provision_id": "xzfy-1",
+    "law_name": "中华人民共和国行政复议法",
+    "article": "（待核验）",
+    "text": "（正文待核验，未核验条文不得引用）",
+    "source_url": "",
+    "effective": "2024-01-01",
+    "verified": false,
+    "note": "行政域：正文尚未从可访问的权威来源核验；核验前不得引用，拦停提示只给法律名称与期限提示",
+    "topics": ["行政复议", "行政", "申请期限", "六十日"],
+    "domain": "administrative"
+  },
+  {
+    "provision_id": "xzcf-1",
+    "law_name": "中华人民共和国行政处罚法",
+    "article": "（待核验）",
+    "text": "（正文待核验，未核验条文不得引用）",
+    "source_url": "",
+    "effective": "2021-07-15",
+    "verified": false,
+    "note": "行政域：正文尚未从可访问的权威来源核验；核验前不得引用，拦停提示只给法律名称与期限提示",
+    "topics": ["行政处罚", "行政", "陈述申辩", "救济途径"],
+    "domain": "administrative"
+  },
+  {
     "provision_id": "ldzy-27",
     "topics": [
       "劳动争议",
