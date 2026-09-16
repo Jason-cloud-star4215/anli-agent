@@ -1023,7 +1023,6 @@
     $("citations").innerHTML = '<div class="empty">分析完成后显示法条与类案来源。</div>';
     $("findings").innerHTML = '<div class="empty">暂无。</div>';
     $("demoNotice").classList.add("d-none");
-    $("offlineNotice").classList.add("d-none");
     $("humanCard").classList.add("d-none");
     $("officialChecks").innerHTML =
       '<div class="empty">正在核对法条在国家法律法规数据库的收录情况…</div>';
@@ -1674,6 +1673,14 @@
       } else {
         badge.className = "badge rounded-pill text-bg-danger";
         badge.textContent = data.disabled ? "大模型已关闭 · 规则版" : "大模型未连接 · 规则版";
+        // 开跑前就提示，别等分析完才发现走的是规则版
+        var box = $("offlineNotice");
+        box.classList.remove("d-none");
+        box.textContent = "已掉线："
+          + (data.disabled
+            ? "大模型已用 ANLI_DISABLE_LLM=1 关闭"
+            : "未连接大模型（未配置密钥或服务不可用）")
+          + "，接下来这次分析会用规则版完成。";
       }
     })
     .catch(function () { /* 状态未知时保持默认文案 */ });

@@ -110,6 +110,7 @@ def build_view(record, report: str = "", error: str = "") -> dict:
         "human_review": record.extra.get("human_review", []) if record else [],
         "human_channels": record.extra.get("human_channels", []) if record else [],
         "out_of_scope": (record.extra.get("out_of_scope") or None) if record else None,
+        "revisions": record.extra.get("revisions", []) if record else [],
         "approved": bool(record.extra.get("approved")) if record else False,
     }
 

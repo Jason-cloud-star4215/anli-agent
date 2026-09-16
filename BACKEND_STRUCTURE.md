@@ -56,7 +56,7 @@
 | CaseRecord | 案号、法院、年份、地域、争议焦点、裁判要旨、金额、来源 | 类案记录 |
 | Citation | 引用文本、来源类型、来源地址、核验状态 | 所有结论的出处 |
 | LawSourceCheck | 法律名称、是否收录、公布日期、施行日期、制定机关、官方页面、核对时间、是否命中缓存 | 官方库回源核对结果 |
-| CriticFinding | 漏洞类型、严重度、依据、修订状态 | 红队审查结果 |
+| CriticFinding | 漏洞类型、严重度、依据、修订状态 | 质证复核结果 |
 | FeasibilityAssessment | 用户期望、法定上限、类案区间、最可能落点、样本量、差距原因 | 诉求可行性评估 |
 | Artifact | 类型、内容或文件引用、版本、生成阶段 | 交付物 |
 | AgentRun | 角色、输入摘要、工具调用、耗时、Token | 可观测的最小单元 |
@@ -94,11 +94,12 @@ evidence_requested · artifact_ready · task_completed · task_failed
 | `retrieval_query` | 每次发起一条检索 | `scope`（law / case）、`query`、`detail` |
 | `retrieval_hit` | 每命中一条法条或类案 | `scope`、`label`、`source`、`verified` 或 `synthetic` |
 | `agent_delta` | 角色每产出一条内容 | `agent`、`text`、`index`、`total`、`kind`（bullet / summary / status） |
+| `round_started` | 进入第 N 轮修订 | `round`、`total`、`open_findings` |
 
 约定：
 
 - `synthetic=true` 的类案在命中时就要带上标记，不能等报告末尾才说明这是演示数据。
-- 引用核验一条只做一次，核验结果同时供挑刺审查与交付物使用。
+- 引用核验一条只做一次，核验结果同时供质证复核与交付物使用。
 - 任何分支状态（`NEEDS_INFO` / `NEEDS_EVIDENCE` / `NEEDS_HUMAN`）返回前都要发终止事件，
   否则前端无法判断流程已经结束。
 
@@ -114,13 +115,13 @@ evidence_requested · artifact_ready · task_completed · task_failed
 ### 5.2 工具白名单
 
 - 检索类角色只能调用检索与核验工具。
-- 红队只能读取已有材料与来源，不允许生成新结论。
+- 质证复核（内部角色键仍为 `redteam`）只能读取已有材料与来源，不允许生成新结论。
 - 文书生成工具在产出后必须经过引用核验才能进入交付物。
 
 ### 5.3 硬边界
 
-- `MAX_TURNS`：每个角色最大循环轮次。
-- `MAX_CRITIC_ROUNDS`：挑刺修订最大轮次。
+- `MAX_TURNS`：每个角色最大循环轮次（默认 20，需容纳多轮对抗的额外角色调用）。
+- `MAX_CRITIC_ROUNDS`：复核修订最大轮次（默认 2，即最多两轮对抗）。
 - `TOKEN_MAX` 与 `BUDGET_MAX`：单任务成本上限。
 - `TIMEOUT`：单次检索和单次模型调用超时。
 - Sandbox 与 Allowlist：限制可访问的文件与网络域名。
@@ -277,6 +278,25 @@ RESEARCHING … EVALUATING → 计算时效剩余天数
 - 检索用关键词 + 二元切片打分，并设准入线（同案由 +3、关键词原样命中 +2），
   避免「惩罚性赔偿」这类通用词把知识产权案例拉进消费纠纷的参照；
 - 官方案例 `amounts` 恒为空，因此永远不会影响类案金额区间与样本量。
+
+### 5.13 多轮对抗循环（2026-09-16 新增）
+
+```
+DEBATING    第 1 轮：主张方 + 抗辩方
+CRITIQUING  第 1 轮复核：编排层规则检测 + 质证复核智能体（critic_finding 逐条推送）
+   ↓ 只要存在「未解决且严重度为中/高」的意见，且轮次 < MAX_CRITIC_ROUNDS
+round_started（round=2）
+   ① 方案修订：逐条回应「已修订 / 坚持原判断 / 本轮解决不了」，产出 changes
+   ② 对方反驳：针对修订后的说法再打一轮（提示词会带上本轮修订说明）
+   ③ 再次复核：重新检测 + 质证复核，按 detail 去重后并入问题清单
+   ↓
+EVALUATING → 交付
+```
+
+- 修订说明里标为「已修订」的类别，会把对应 `CriticFinding.resolved` 置为 True，
+  报告里的复核清单会显示「→ 已修订」，避免只提问题不改的假迭代。
+- 没有问题时不硬凑轮次：交付物里的「修订说明与遗留问题」会写明未触发第二轮的原因。
+- 轮次受 `MAX_CRITIC_ROUNDS` 与 `MAX_TURNS` 双重约束，超预算时按现有结果交付。
 
 ## 6. 错误与恢复
 
