@@ -413,7 +413,8 @@ def render_summary(
     }[role]
 
     applies = bool((profile.extra or {}).get("responsibility_applies", True))
-    basis = "按现有证据与责任比例" if applies else "按现有证据（该案由不按责任比例分摊）"
+    basis = "按现有证据与责任比例" if applies else "按现有证据"
+    ratio_note = "" if applies else "该案由不按责任比例分摊，按全额计算。"
     case_text = format_range(assessment.case_low, assessment.case_high)
     likely_text = approx_range(assessment.likely_low, assessment.likely_high)
     sufficiency_text = f"{assessment.sufficiency:.0%}"
@@ -457,7 +458,7 @@ def render_summary(
             else:
                 conclusion = "对方的主张基本在合理区间内，抗辩空间有限"
             numbers = (
-                f"对方主张 {assessment.expectation:.0f} 元，{basis}，"
+                f"对方主张 {assessment.expectation:.0f} 元。{ratio_note}{basis}，"
                 f"可能被支持的{approx(assessment.legal_cap)}；同类案例通常判约 {case_text} 元"
                 f"（中位数 {assessment.case_median:.0f} 元，样本 {assessment.sample_size} 件），"
                 f"你的合理赔付预期{likely_text}。"
@@ -514,8 +515,8 @@ def render_summary(
         )
     # 金额口径：赔偿金额本身不确定，结论里的数字一律按约数呈现
     extra_lines.append(
-        "金额口径：可支持金额、类案区间、最可能落点均为按现有材料估算的约数"
-        "（已用「约」标注），实际结果取决于证据与裁判。"
+        "金额口径：可支持金额、类案区间与最可能落点都是按现有材料估算的大致数，"
+        "实际以证据和裁判认定为准。"
     )
     cap_if_full = potential_cap(profile) * profile.responsibility_ratio
     if cap_if_full > assessment.legal_cap + 1:

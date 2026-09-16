@@ -240,6 +240,11 @@
               <button type="button" class="btn btn-outline-secondary btn-sm w-50" id="sampleCar">车祸示例</button>
               <button type="button" class="btn btn-outline-secondary btn-sm w-50" id="sampleConsumption">消费维权示例</button>
             </div>
+            <div class="d-flex gap-2 mt-2">
+              <button type="button" class="btn btn-outline-secondary btn-sm w-50" id="sampleCriminal">刑事案件示例</button>
+              <button type="button" class="btn btn-outline-secondary btn-sm w-50" id="sampleBigRisk">大额索赔示例</button>
+            </div>
+            <div class="form-text mt-1">后两个示例用来看两道闸门：刑事案件会直接拦停，大额索赔会转人工确认。</div>
             <button type="button" class="btn btn-outline-primary btn-sm w-100 mt-2" id="templateBtn">
               用模板填写（按当前身份生成，填空即可）
             </button>
@@ -515,6 +520,24 @@
           + "买家提供订单截图和客服聊天记录，未提供官方检测报告。商家主张属于表述不严谨，不构成欺诈。",
         evidence: ["订单截图", "聊天记录"]
       }
+    },
+    // 超出覆盖范围：演示「刑事案件直接拦停，不出分析结论」
+    criminal: {
+      claimant: {
+        expect: 0,
+        desc: "我表哥因为涉嫌诈骗罪被刑事拘留了，现在案子已经到检察院，家里想知道能不能取保候审、"
+          + "大概会判几年，能不能赔钱让对方撤案。",
+        evidence: []
+      }
+    },
+    // 高风险：演示「金额重大 + 涉人身安全 → 转人工确认」
+    bigrisk: {
+      claimant: {
+        expect: 900000,
+        desc: "6月10号我父亲骑电动车被一辆小轿车撞了，交警出了事故认定书，对方主要责任。"
+          + "现在人还在住院，医疗费已经花了8万元，后续还要康复治疗和护理。我要求对方一共赔90万元。",
+        evidence: ["事故认定书", "医疗费票据"]
+      }
     }
   };
   // 每个事件翻译成过程流里的一行：标签、正文、来源标记、颜色与角色
@@ -645,7 +668,8 @@
     analysis: "案件分析", feasibility: "诉求可行性", evidence: "证据清单",
     research: "法条与类案", risk: "风险与漏洞", actions: "维权路径对照",
     calculation: "金额计算说明", revision: "修订说明",
-    document: "文书草稿", need_info: "补充信息提示"
+    document: "文书草稿", need_info: "补充信息提示",
+    out_of_scope: "超出覆盖范围提示", human_review: "转人工提示"
   };
   var GRADE_LABEL = {
     authoritative: "已核验", synthetic: "演示数据", unverified: "未通过"
@@ -1717,7 +1741,8 @@
     sampleConfirmed = (sample.evidence || []).slice();
     if (sample.region) { fillRegions(null, sample.region); }
     $("desc").value = sample.desc;
-    if (sample.expect) { $("expectation").value = sample.expect; }
+    // 刑事案件示例不带金额，这里要主动清空，避免沿用上一次填的数额
+    $("expectation").value = sample.expect ? sample.expect : "";
     $("filelist").textContent = sampleConfirmed.length
       ? "示例按「已有这些材料」处理：" + sampleConfirmed.join("、")
         + "（换成自己的情况时请重新上传或勾选）"
@@ -1866,6 +1891,8 @@
 
   $("sampleCar").addEventListener("click", function () { fillSample("car"); });
   $("sampleConsumption").addEventListener("click", function () { fillSample("consumption"); });
+  $("sampleCriminal").addEventListener("click", function () { fillSample("criminal"); });
+  $("sampleBigRisk").addEventListener("click", function () { fillSample("bigrisk"); });
   $("templateBtn").addEventListener("click", insertTemplate);
   $("run").addEventListener("click", start);
   $("continue").addEventListener("click", continueAnalysis);

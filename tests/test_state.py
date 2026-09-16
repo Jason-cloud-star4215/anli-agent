@@ -26,6 +26,22 @@ class StateMachineTest(unittest.TestCase):
         with self.assertRaises(BudgetExceeded):
             budget.spend_turn()
 
+    def test_budget_reset_keeps_limits(self):
+        """reset 只清计数，不改上限：同一个实例能连续跑多个任务。"""
+
+        budget = Budget(max_turns=2, max_critic_rounds=1)
+        budget.spend_turn()
+        budget.spend_critic_round()
+        budget.reset()
+        self.assertEqual(budget.turns, 0)
+        self.assertEqual(budget.critic_rounds, 0)
+        self.assertEqual(budget.max_turns, 2)
+        self.assertEqual(budget.max_critic_rounds, 1)
+        budget.spend_turn()
+        budget.spend_critic_round()
+        with self.assertRaises(BudgetExceeded):
+            budget.spend_critic_round()
+
     def test_checkpoint_roundtrip(self):
         store = StateStore()
         store.save("t1", TaskState.RESEARCHING, {"artifacts": []})

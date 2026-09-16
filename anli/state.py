@@ -86,6 +86,17 @@ class Budget:
                 f"超出最大复核轮次 MAX_CRITIC_ROUNDS={self.max_critic_rounds}"
             )
 
+    def reset(self) -> None:
+        """把已用计数清零但保留上限：同一个编排实例可以跑多次任务。
+
+        之前复用同一个 Orchestrator 跑第二次时会带着上一次的计数继续累加，
+        很快就撞上 MAX_TURNS 并把任务判成 FAILED。
+        """
+
+        self.turns = 0
+        self.critic_rounds = 0
+        self.tool_calls = 0
+
 
 class StateStore:
     """保存任务状态与检查点，支持中断后恢复。"""

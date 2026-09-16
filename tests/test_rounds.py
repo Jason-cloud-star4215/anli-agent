@@ -41,6 +41,30 @@ def run_task(profile, expectation, critic_rounds: int = 2, task_id: str = "round
 
 
 class MultiRoundTest(unittest.TestCase):
+    def test_orchestrator_can_run_more_than_once(self):
+        """同一个编排实例连续跑两个任务都要成功（服务器上按任务新建，复用场景也要成立）。"""
+
+        orchestrator = Orchestrator(
+            law_store=LawStore.load(DATA / "laws.seed.json"),
+            case_store=CaseStore.load(DATA / "cases.seed.json", DATA / "cases.official.json"),
+            state_store=StateStore(),
+        )
+        first = orchestrator.run(
+            task_id="reuse-1",
+            role=Role.CLAIMANT,
+            profile=car_accident_profile(),
+            expectation=car_accident_expectation(),
+        )
+        second = orchestrator.run(
+            task_id="reuse-2",
+            role=Role.DEFENDANT,
+            profile=car_accident_profile(),
+            expectation=car_accident_expectation(),
+        )
+        self.assertNotEqual(first.state.value, "FAILED")
+        self.assertNotEqual(second.state.value, "FAILED")
+        self.assertTrue(second.extra.get("summary"))
+
     def test_second_round_runs_when_findings_remain(self):
         record, events = run_task(car_accident_profile(), car_accident_expectation())
         rounds = [event for event in events if event.type == "round_started"]

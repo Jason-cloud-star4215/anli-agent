@@ -86,6 +86,8 @@ class Orchestrator:
     ) -> TaskRecord:
         record = TaskRecord(task_id=task_id, role=role, state=TaskState.RECEIVED)
         record.extra["approved"] = approved
+        # 同一个实例可以连续跑多个任务：先清零已用轮次，但保留上限设置
+        self.budget.reset()
         self.bus.emit("task_created", task_id, {"role": role.value})
 
         try:
@@ -809,8 +811,8 @@ class Orchestrator:
                             likely_line,
                             f"结论：{labels[0]}{feasible}",
                             gate_line,
-                            "金额口径：以上除「期望 / 主张 / 标的」外的数字都是按现有材料的估算约数，"
-                            "实际结果取决于证据与裁判。",
+                            "金额口径：除期望 / 主张 / 标的这类由你自己提出的数额外，"
+                            "本报告的金额都是按现有材料估算的大致数，实际以证据和裁判认定为准。",
                             "差距原因：" + ("；".join(assessment.gap_reasons) or "无"),
                             "提升路径：" + ("；".join(assessment.uplift_paths) or "无"),
                         ]

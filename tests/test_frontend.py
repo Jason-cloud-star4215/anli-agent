@@ -193,6 +193,15 @@ class FrontendTest(unittest.TestCase):
         self.assertIn('capText = "待补证"', self.html)
         self.assertIn('likelyText = "暂不定"', self.html)
 
+    def test_gate_samples_and_chinese_labels(self):
+        """要能一键演示两道闸门，且过程流里不出现英文产物名。"""
+
+        for element in ["sampleCriminal", "sampleBigRisk"]:
+            self.assertIn(f'id="{element}"', self.html)
+        self.assertIn("刑事案件示例", self.html)
+        self.assertIn('out_of_scope: "超出覆盖范围提示"', self.html)
+        self.assertIn('human_review: "转人工提示"', self.html)
+
 
 if __name__ == "__main__":
     unittest.main()
