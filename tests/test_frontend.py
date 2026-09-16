@@ -242,6 +242,22 @@ class FrontendTest(unittest.TestCase):
         self.assertIn('versionBadge', self.html)
         self.assertIn("Ctrl+F5", self.html)
 
+    def test_evidence_matrix_panel(self):
+        """要有专门的位置展示双方举证情况：我方提交了什么、逐项支撑、对方该举什么证。"""
+
+        for element in [
+            "evidenceMatrixCard",
+            "matrixTitle",
+            "matrixBadge",
+            "ownEvidenceList",
+            "itemEvidenceList",
+            "counterEvidenceList",
+        ]:
+            self.assertIn(f'id="{element}"', self.html)
+        self.assertIn("renderEvidenceMatrix", self.html)
+        for label in ["我方已提交的证据", "对方需要举证的部分", "需双方举证", "举证不能"]:
+            self.assertIn(label, self.html, label)
+
 
 if __name__ == "__main__":
     unittest.main()

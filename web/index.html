@@ -163,6 +163,16 @@
   .chat-msg .body { color: var(--ink); white-space: pre-wrap; word-break: break-word; }
   .chat-msg .files { font-size: .75rem; color: var(--ink-soft); margin-top: 6px; }
 
+  /* 证据矩阵：来源徽章 + 逐项支撑 */
+  .evidence-row {
+    display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap;
+    border: 1px solid var(--line-soft); border-radius: var(--radius);
+    padding: 7px 10px; font-size: .8125rem; background: #fff;
+  }
+  .evidence-row .name { font-weight: 600; color: var(--ink); }
+  .evidence-row .note { color: var(--ink-soft); font-size: .75rem; }
+  .evidence-row .amount { margin-left: auto; color: var(--ink-soft); font-size: .75rem; }
+
   .stat {
     border-radius: var(--radius); background: var(--surface-soft);
     padding: var(--space-3) 14px; height: 100%;
@@ -347,6 +357,22 @@
           <p class="mb-3" id="summaryText"></p>
           <div class="row g-2" id="statRow"></div>
           <div class="form-text mt-3" id="metaLine"></div>
+        </div>
+      </div>
+
+      <!-- 证据与举证情况：专门展示双方各自提交了什么、每项主张靠什么撑着 -->
+      <div class="card mb-3 d-none" id="evidenceMatrixCard">
+        <div class="card-header d-flex align-items-center">
+          <span id="matrixTitle">证据与举证情况</span>
+          <span class="badge text-bg-light border ms-auto" id="matrixBadge"></span>
+        </div>
+        <div class="card-body">
+          <div class="small fw-semibold text-secondary mb-2" id="ownEvidenceTitle">我方已提交的证据</div>
+          <div id="ownEvidenceList" class="vstack gap-1 mb-3"></div>
+          <div class="small fw-semibold text-secondary mb-2">逐项证据支撑</div>
+          <div id="itemEvidenceList" class="vstack gap-1 mb-3"></div>
+          <div class="small fw-semibold text-secondary mb-2" id="counterEvidenceTitle">对方的举证情况</div>
+          <div id="counterEvidenceList" class="vstack gap-1"></div>
         </div>
       </div>
 
@@ -1124,6 +1150,7 @@
     // 开新任务时先清掉上一次的掉线横幅，等本次跑完再按本次结果重设
     $("offlineNotice").classList.add("d-none");
     $("summaryCard").classList.add("d-none");
+    $("evidenceMatrixCard").classList.add("d-none");
     $("evidenceCard").classList.add("d-none");
     $("chatCard").classList.add("d-none");
     $("strategyCard").classList.add("d-none");
@@ -1278,6 +1305,7 @@
 
     renderOfficialChecks(data.law_sources || []);
     renderOfficialCases(data.official_cases || []);
+    renderEvidenceMatrix(data);
     renderEvidence(data);
     renderChat(data);
     renderStrategies(data.strategies || []);
@@ -1287,6 +1315,7 @@
     // 卡片依次滑上来，替代原来「同时弹出来」的观感
     revealCard($("humanCard"), 0);
     revealCard($("summaryCard"), 60);
+    revealCard($("evidenceMatrixCard"), 110);
     revealCard($("evidenceCard"), 140);
     revealCard($("chatCard"), 180);
     revealCard($("strategyCard"), 220);
@@ -1591,7 +1620,8 @@
       box.innerHTML = '<div class="d-flex align-items-center gap-2 mb-1">'
         + '<span class="badge ' + tag[1] + '">' + tag[0] + '</span>'
         + '<span class="fw-semibold">' + item.item + '</span>'
-        + '<span class="ms-auto text-secondary small">涉及金额约 ' + money(item.impact) + ' 元</span>'
+        + '<span class="ms-auto text-secondary small">'
+        + (item.impact > 0 ? "涉及金额约 " + money(item.impact) + " 元" : "金额待补") + '</span>'
         + '</div>'
         + '<div class="small">' + missingLabel + '：' + item.missing.join("、") + '</div>'
         + '<div class="small text-secondary">' + item.why + '</div>'
@@ -1639,6 +1669,104 @@
   }
 
   // 对话区：让用户看得见自己提交了什么，并在证据不足时继续第 2、第 3 轮
+  // 证据与举证情况：我方提交了什么、每项主张靠什么撑着、对方该举什么证
+  function renderEvidenceMatrix(data) {
+    var card = $("evidenceMatrixCard");
+    var info = data.understanding || {};
+    var evidence = info.evidence || {};
+    var findings = data.item_findings || [];
+    var requests = data.evidence_request || [];
+    if (data.out_of_scope || (!Object.keys(evidence).length && !findings.length)) {
+      card.classList.add("d-none");
+      return;
+    }
+    card.classList.remove("d-none");
+
+    var titles = {
+      claimant: ["证据与举证情况", "我方已提交的证据", "对方的举证情况（对方可能质疑的点）"],
+      defendant: ["证据与举证情况", "我方已提交的证据", "对方需要举证的部分"],
+      judge: ["双方证据与举证责任", "已提交的材料", "需要双方举证查明的事项"]
+    };
+    var picked = titles[role] || titles.claimant;
+    $("matrixTitle").textContent = picked[0];
+    $("ownEvidenceTitle").textContent = picked[1];
+    $("counterEvidenceTitle").textContent = picked[2];
+    $("matrixBadge").textContent = "材料 " + Object.keys(evidence).length + " 项"
+      + " · 缺 " + requests.length + " 项"
+      + (typeof data.evidence_sufficiency === "number"
+        ? " · 充分度 " + Math.round(data.evidence_sufficiency * 100) + "%" : "");
+
+    var sourceBadge = function (source) {
+      if (source.indexOf("已上传") >= 0 || source.indexOf("有材料") >= 0) {
+        return [source, "text-bg-success"];
+      }
+      if (source.indexOf("用户确认") >= 0) { return [source, "text-bg-primary"]; }
+      if (source.indexOf("待上传") >= 0 || source.indexOf("描述") >= 0) {
+        return ["描述中提及 · 待上传原件", "text-bg-warning"];
+      }
+      return ["仅口头提及", "text-bg-secondary"];
+    };
+
+    var own = $("ownEvidenceList");
+    own.innerHTML = "";
+    var names = Object.keys(evidence);
+    if (!names.length) {
+      own.innerHTML = '<div class="empty">还没有提交任何材料，只在描述里提到过。</div>';
+    }
+    names.forEach(function (name) {
+      var badge = sourceBadge(String(evidence[name]));
+      var row = document.createElement("div");
+      row.className = "evidence-row reveal-up";
+      row.innerHTML = '<span class="name">' + escapeHtml(name) + '</span>'
+        + '<span class="badge ' + badge[1] + '">' + escapeHtml(badge[0]) + '</span>'
+        + '<span class="note">' + escapeHtml(String(evidence[name])) + '</span>';
+      own.appendChild(row);
+    });
+
+    var per = $("itemEvidenceList");
+    per.innerHTML = "";
+    if (!findings.length) {
+      per.innerHTML = '<div class="empty">还没有识别到具体的损失项目。</div>';
+    }
+    var statusMap = {
+      supported: ["可以支持", "text-bg-success"],
+      standard: ["需按法定标准计算", "text-bg-warning"],
+      unsupported: ["举证不能", "text-bg-danger"]
+    };
+    findings.forEach(function (item) {
+      var status = statusMap[item.status] || ["待判断", "text-bg-secondary"];
+      var row = document.createElement("div");
+      row.className = "evidence-row reveal-up";
+      row.innerHTML = '<span class="name">' + escapeHtml(item.item) + '</span>'
+        + '<span class="badge ' + status[1] + '">' + status[0] + '</span>'
+        + '<span class="note">' + escapeHtml(String(item.basis || "").slice(0, 48)) + '</span>'
+        + '<span class="amount">主张约 ' + money(item.claimed) + ' 元</span>';
+      per.appendChild(row);
+    });
+
+    var counter = $("counterEvidenceList");
+    counter.innerHTML = "";
+    if (!requests.length) {
+      counter.innerHTML = '<div class="empty">目前没有需要对方补强的举证点。</div>';
+    }
+    requests.forEach(function (item) {
+      var row = document.createElement("div");
+      row.className = "evidence-row reveal-up";
+      var who = role === "defendant" ? "对方应提供"
+        : role === "judge" ? "需双方举证" : "对方可能质疑";
+      row.innerHTML = '<span class="name">' + escapeHtml(item.item) + '</span>'
+        + '<span class="badge text-bg-secondary">' + who + '</span>'
+        + '<span class="note">'
+        + escapeHtml(((item.missing || []).join("、") || "相关材料").slice(0, 40)) + '</span>'
+        + '<span class="amount">' + (item.impact > 0
+          ? "涉及约 " + money(item.impact) + " 元" : "金额待补") + '</span>';
+      counter.appendChild(row);
+    });
+    staggerItems(own, 40);
+    staggerItems(per, 40);
+    staggerItems(counter, 40);
+  }
+
   function renderChat(data) {
     var card = $("chatCard");
     var rounds = data.rounds || [];
