@@ -21,6 +21,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from .events import Event
+from . import __version__
 from .evidence_chain import QUALITY_QUESTIONS
 from .intake import extract_expectation
 from .llm import LLMClient, candidate_env_files
@@ -374,6 +375,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json(
                 {
                     "code": 0,
+                    "version": __version__,
                     "llm": bool(llm and llm.available),
                     "model": llm.model if llm else "",
                     "disabled": os.environ.get("ANLI_DISABLE_LLM") == "1",

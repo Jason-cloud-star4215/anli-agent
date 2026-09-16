@@ -211,7 +211,7 @@ class FrontendTest(unittest.TestCase):
             "对方要求我赔偿90万元，我认为金额太高",
             "原告目前仍在住院，医疗费8万元",
             # 刑事案件示例：三种身份各一份说法
-            "我表哥因为涉嫌诈骗罪被刑事拘留了",
+            "我在网上被人以投资返利的名义骗走了8万元",
             "有人向公安报案说我涉嫌合同诈骗",
             "一起涉嫌诈骗罪的案件正在审查起诉阶段",
         ]
@@ -220,12 +220,27 @@ class FrontendTest(unittest.TestCase):
         # 角色版本缺失时要显式提示回退，而不是默默给主张方视角
         self.assertIn("该示例暂无当前身份的版本，显示的是主张方视角", self.html)
 
+    def test_criminal_claimant_sample_is_the_victim_side(self):
+        """刑事示例的「主张方」必须是被害人口吻，不能写成被指控方（曾经写反了）。"""
+
+        self.assertIn("我在网上被人以投资返利的名义骗走了8万元", self.html)
+        self.assertIn("我想知道钱还能不能追回来", self.html)
+        # 被指控方的口吻只能出现在被告版本里
+        self.assertNotIn("我表哥因为涉嫌诈骗罪被刑事拘留", self.html)
+
     def test_template_button_switches_with_role(self):
         """模板按身份区分，并在未手动改动时随身份切换。"""
 
         self.assertIn("refreshTemplateForRole", self.html)
         for marker in ["【对方的主张】", "【我认为不合理的部分】", "【被告抗辩】", "【案件概况】"]:
             self.assertIn(marker, self.html, marker)
+
+    def test_page_shows_version_badge(self):
+        """页头要有版本号，用来分辨旧缓存页面。"""
+
+        self.assertIn('id="versionBadge"', self.html)
+        self.assertIn('versionBadge', self.html)
+        self.assertIn("Ctrl+F5", self.html)
 
 
 if __name__ == "__main__":

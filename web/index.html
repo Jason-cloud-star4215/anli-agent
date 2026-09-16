@@ -201,6 +201,7 @@
     </div>
     <span class="badge rounded-pill text-bg-warning ms-auto">参考性质，不构成法律意见</span>
     <span class="badge rounded-pill text-bg-secondary" id="modelBadge">模型状态未知</span>
+    <span class="badge rounded-pill text-bg-light border" id="versionBadge">版本校验中</span>
   </div>
 </header>
 
@@ -525,8 +526,9 @@
     criminal: {
       claimant: {
         expect: 0,
-        desc: "我表哥因为涉嫌诈骗罪被刑事拘留了，现在案子已经到检察院，家里想知道能不能取保候审、"
-          + "大概会判几年，能不能赔钱让对方撤案。",
+        // 原告 = 被害人 / 控告方：说的是「我被骗了、钱怎么追回来」
+        desc: "我在网上被人以投资返利的名义骗走了8万元，已经向公安报案，公安也立案侦查了，"
+          + "对方现在被刑事拘留。我想知道钱还能不能追回来，能不能要求对方赔偿，要走什么程序。",
         evidence: []
       },
       defendant: {
@@ -537,8 +539,8 @@
       },
       judge: {
         expect: 0,
-        desc: "一起涉嫌诈骗罪的案件正在审查起诉阶段，被告人家属来问量刑区间和取保候审的可能性，"
-          + "并询问能否与被害人达成谅解。",
+        desc: "一起涉嫌诈骗罪的案件正在审查起诉阶段：被害人报案称被以投资返利名义骗取8万元，"
+          + "犯罪嫌疑人已被刑事拘留。双方家属分别来问案件进展、赔偿可能与量刑区间。",
         evidence: []
       }
     },
@@ -1893,6 +1895,10 @@
     .then(function (res) { return res.json(); })
     .then(function (data) {
       var badge = $("modelBadge");
+      // 版本徽章：用来区分「页面是新的还是旧的缓存」
+      var versionBadge = $("versionBadge");
+      versionBadge.textContent = "v" + (data.version || "?");
+      versionBadge.title = "页面与服务端版本号；两边不一致说明浏览器用的是旧页面，按 Ctrl+F5 强制刷新";
       if (data.llm) {
         badge.className = "badge rounded-pill text-bg-success";
         badge.textContent = "大模型已连接 · " + (data.model || "");
