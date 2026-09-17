@@ -219,6 +219,9 @@ def profile_from_payload(
             ),
             "quality_answers": dict(quality_answers or {}),
             "sufficiency": sufficiency(item_findings),
+            # 材料正文解析结果（含未解析原因）：与大模型路径/规则路径保持同一份透出
+            "material_facts": [item.to_dict() for item in (material_facts or [])],
+            "material_summary": material_summary,
             "responsibility_applies": responsibility_applies(cause),
             "waive_all": bool(waive_all),
         },
