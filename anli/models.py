@@ -183,6 +183,10 @@ class FeasibilityAssessment:
     blocked_amount: float = 0.0
     claimed_amount: float = 0.0
     provisional: bool = False
+    # 量级闸门：样本判赔量级与本案不在同一档时拒绝区间外推（诚实降级）
+    magnitude_mismatch: bool = False
+    magnitude_excluded: int = 0
+    case_magnitude_label: str = ""
 
     @property
     def expectation_supported(self) -> bool:

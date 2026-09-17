@@ -875,7 +875,13 @@ class Orchestrator:
             )
             # 实证感知：非演示样本即人工核验的实证类案，亮 🟢；纯演示时维持原警告
             real_sample = assessment.sample_size - assessment.synthetic_sample_size
-            if assessment.has_synthetic:
+            if assessment.magnitude_mismatch:
+                nature_line = (
+                    "样本性质：现有样本与本案损失量级（"
+                    + (assessment.case_magnitude_label or "未标注")
+                    + "）不匹配，已停止区间外推（诚实降级，不编造落点）"
+                )
+            elif assessment.has_synthetic:
                 nature_line = (
                     "样本性质：含演示数据，仅用于演示检索与计算流程，不是真实裁判结果"
                     + (f"（其中真实来源 {real_sample} 件）" if real_sample else "")
@@ -886,8 +892,21 @@ class Orchestrator:
                 )
             else:
                 nature_line = "样本性质：真实来源案例"
+            if assessment.magnitude_mismatch:
+                range_line = "同类案例区间：暂不提供（样本与本案损失量级不匹配）"
+            else:
+                range_line = (
+                    f"同类案例区间：约 {format_range(assessment.case_low, assessment.case_high)} 元"
+                    f"（中位数 {_fmt(assessment.case_median)} 元，样本 {assessment.sample_size} 件）"
+                )
             likely_text = approx_range(assessment.likely_low, assessment.likely_high)
-            if assessment.provisional:
+            if assessment.magnitude_mismatch:
+                cap_line = f"{labels[1]}：约 {assessment.legal_cap:.0f} 元"
+                likely_line = (
+                    f"{labels[2]}：暂不提供（现有样本与本案损失量级不匹配，"
+                    "以「可支持金额」为主参考）"
+                )
+            elif assessment.provisional:
                 cap_line = (
                     f"{labels[1]}：待补证（按现有证据约 {assessment.legal_cap:.0f} 元）"
                 )
@@ -903,8 +922,7 @@ class Orchestrator:
                         [
                             f"{labels[0]}：{assessment.expectation:.0f} 元",
                             cap_line,
-                            f"同类案例区间：约 {format_range(assessment.case_low, assessment.case_high)} 元"
-                            f"（中位数 {_fmt(assessment.case_median)} 元，样本 {assessment.sample_size} 件）",
+                            range_line,
                             region_line,
                             "样本构成：" + assessment.sample_note,
                             nature_line,

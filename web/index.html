@@ -1285,7 +1285,12 @@
       var likelyText = rangeText(a.likely_low, a.likely_high);
       var likelyHint = "同类中位数 " + money(a.case_median) + " 元 · "
         + (a.sample_note || ("样本 " + a.sample_size + " 件"));
-      if (a.provisional) {
+      if (a.magnitude_mismatch) {
+        // 量级闸门：现有样本判赔量级与本案不同档，拒绝区间外推（诚实降级）
+        likelyText = "暂不提供";
+        likelyHint = "样本量级不匹配（本案约 " + money(a.legal_cap) + " 元级）"
+          + " · 以可支持金额为主参考";
+      } else if (a.provisional) {
         // 证据闸门：不把估算数字当成结论摆出来
         capText = "待补证";
         capHint = "证据充分度 " + Math.round((a.sufficiency || 0) * 100) + "%";
