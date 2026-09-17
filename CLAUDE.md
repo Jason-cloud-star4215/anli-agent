@@ -29,8 +29,49 @@ anli-agent/
 ├── FRONTEND_GUIDELINE.md      前端规范
 ├── BACKEND_STRUCTURE.md       后端结构与边界
 ├── CLAUDE.md                  Agent 协作规则
-├── PROGRESS.md                当前进度
-└── （代码目录待建立，建立后在此补充说明）
+├── PROGRESS.md                当前进度（唯一进度真相来源）
+├── DEMO_SCRIPT.md             演示剧本与录制说明
+├── LICENSE                    MIT
+├── .env.example               密钥模板（复制为 .env 后填写；交付包不含 .env）
+├── app.py                     exe 入口
+├── 启动案理.cmd               双击启动（纯 ASCII）
+├── anli/                      后端源码
+│   ├── orchestrator.py        编排层：阶段、闸门、交付物组装
+│   ├── agents.py              六个角色智能体 + 两套 stance playbook
+│   ├── web.py                 HTTP + SSE + 导出路由 + 视图组装
+│   ├── cli.py                 命令行 demo / ask
+│   ├── state.py               状态机 + Budget + Checkpoint
+│   ├── events.py              18 类结构化事件 + EventBus
+│   ├── models.py              数据模型
+│   ├── intake.py              个案信息抽取（规则版）
+│   ├── llm_intake.py          大模型案情抽取
+│   ├── llm.py                 OpenAI 兼容客户端（标准库）
+│   ├── item_assessment.py     逐项三态认定（supported / standard / unsupported）
+│   ├── standards.py           法定标准表（浙江省 10 条，带出处）
+│   ├── evidence_chain.py      补证清单 + 证据充分度
+│   ├── feasibility.py         可行性评估 + 证据闸门
+│   ├── strategy.py            策略建议 + 结论摘要
+│   ├── cross_exam.py          结构化质证争点
+│   ├── judgment.py            模拟判决书
+│   ├── exporter.py            报告导出（Markdown）
+│   ├── real_cases.py          实证类案库（仅 human_verified 进流程）
+│   ├── materials.py           上传材料正文解析（按后缀分派，读不到就如实标注）
+│   ├── material_text.py       材料与判决书共用的文本抽取规则
+│   ├── redact.py              对外发送前的个人信息打码
+│   ├── planner.py             规划决策（检索词 / 轮次 / 路径排序），模型参与 + 规则兜底
+│   ├── stores.py              LawStore / CaseStore / CitationVerifier
+│   ├── retrieval_flk.py       国家法律法规数据库回查 + TTL 缓存
+│   ├── scope.py               刑事行政拦停 + 转人工闸门
+│   ├── tools.py               工具注册与路由
+│   ├── tools_builtin.py       内置工具注册
+│   ├── regions.py             省级行政区归一化
+│   ├── scenarios.py           演示案例
+│   └── paths.py               资源路径（兼容源码 / 打包）
+├── web/                       前端（index.src.html 为源码，index.html 为构建产物）
+├── data/                      laws.seed / cases.seed / cases.official / real_cases / standards
+├── tools/                     构建、抓取、打包、自测、判决书提取
+├── tests/                     27 个测试文件
+└── dist/                      打包产物（不含密钥与运行数据）
 ```
 
 ## 4. 工作流程
@@ -89,12 +130,31 @@ python -m anli.cli demo --json
 # 运行全部测试
 python -m unittest discover -s tests -v
 
-# 重新打包 exe（产物在 dist\案理.exe，记得同时复制 .env）
+# 重新打包 exe（产物在 dist\案理.exe）
 python -m PyInstaller --noconfirm --onefile --console --name 案理 `
   --add-data "web;web" --add-data "data;data" app.py
+
+# 端到端自检（真实 HTTP + 无头浏览器口径，34 项检查）
+python tools/selftest.py
+
+# 改了前端源码后必须重新构建自包含页面
+python tools/build_web.py
+
+# 实证类案录入：判决书半自动提取 → 人工核对 → 入库
+python tools/case_extractor.py --file 判决书.txt
+python tools/cases_cli.py list
 ```
 
 工作目录为 `anli-agent/`。
+
+注意：**交付包不带 `.env`**。首次运行请把 `.env.example` 复制为 `.env`（或 `dist\.env`），
+填入自己的密钥；没有密钥时流程自动退回规则版，功能可用但理解能力下降。
+
+隐私相关开关：
+
+- 案情描述发给大模型前**默认自动脱敏**（手机号、身份证、银行卡、详细住址）；
+  只有显式设置 `ANLI_SEND_RAW_TEXT=1` 才发送原文，设置后视图会标注「已发送原文」。
+- 上传材料的正文解析结果会随任务写入检查点；`excerpt` 是脱敏后的片段，原文不进视图。
 
 ## 9. 大模型配置
 

@@ -14,7 +14,8 @@ from __future__ import annotations
 import re
 from datetime import date
 
-from .models import Role, TaskRecord
+from .item_assessment import STATUS_LABEL
+from .models import FeasibilityAssessment, Role, TaskRecord
 
 ROLE_LABEL = {
     Role.CLAIMANT: "主张方（原告）视角",
@@ -147,3 +148,130 @@ def build_markdown_export(record: TaskRecord, task_id: str, report_text: str = "
     """兼容入口：从任务记录导出 Markdown。"""
 
     return render_markdown(export_model_from_record(record, task_id))
+
+
+def build_docx_export(record: TaskRecord | None, task_id: str) -> bytes:
+    """兼容入口：从任务记录导出 Word（渲染统一走 docx_export.build_docx）。"""
+
+    from .docx_export import build_docx
+
+    return build_docx(export_model_from_record(record, task_id))
+
+
+# ---------------------------------------------------------------------- 章节序号
+# 交付物已经超过 12 份（含质证争点清单与模拟判决书），序号表要够长，
+# 否则第 13 份之后会退化成「13、」这种阿拉伯数字，跟前面的「十二、」不统一。
+CN_NUMERALS = [
+    "一", "二", "三", "四", "五", "六", "七", "八", "九", "十",
+    "十一", "十二", "十三", "十四", "十五", "十六", "十七", "十八", "十九", "二十",
+]
+
+
+def section_number(index: int) -> str:
+    """第 index 份交付物的章节序号（0 起）。"""
+
+    return CN_NUMERALS[index] if index < len(CN_NUMERALS) else str(index + 1)
+
+
+# ---------------------------------------------------------------------- 金额认定表（CSV）
+CSV_HEADER = [
+    "序号", "赔偿项目", "主张金额(元)", "认定状态", "认定金额(元)",
+    "认定依据", "法定标准", "缺失参数", "提示",
+]
+
+
+def _finding_rows(source) -> list[dict]:
+    """把逐项认定结果统一成字典行：任务记录与检查点视图都可用。"""
+
+    raw = (
+        list(getattr(getattr(source, "profile", None), "item_findings", None) or [])
+        if not isinstance(source, dict)
+        else list(source.get("item_findings") or [])
+    )
+    rows: list[dict] = []
+    for item in raw:
+        if isinstance(item, dict):
+            rows.append(item)
+        else:
+            rows.append(
+                {
+                    "item": item.item,
+                    "claimed": item.claimed,
+                    "status": item.status,
+                    "counted": item.counted,
+                    "basis": item.basis,
+                    "standard": item.standard,
+                    "missing_params": item.missing_params,
+                    "note": item.note,
+                }
+            )
+    return rows
+
+
+def build_csv_export(source, task_id: str) -> str:
+    """金额认定表：逐项列出「主张多少 / 认定成什么状态 / 认定多少钱 / 什么依据」。
+
+    source 可以是任务记录，也可以是检查点里保存的前端视图（服务重启后的导出路径）。
+    表格以「能被 Excel 直接打开并筛选」为准：表头与数据行在前，
+    免责与口径说明放在末尾的说明行，不打断表头。
+    调用方需按 UTF-8 BOM 写出，否则中文表头在 Excel 里会乱码。
+    """
+
+    import csv
+    import io
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, lineterminator="\r\n")
+    writer.writerow(CSV_HEADER)
+
+    for index, row in enumerate(_finding_rows(source), start=1):
+        status = str(row.get("status", ""))
+        writer.writerow(
+            [
+                index,
+                row.get("item", ""),
+                f"{float(row.get('claimed') or 0):.0f}",
+                STATUS_LABEL.get(status, status),
+                f"{float(row.get('counted') or 0):.0f}" if status == "supported" else "",
+                row.get("basis", ""),
+                row.get("standard", ""),
+                "、".join(row.get("missing_params") or []),
+                row.get("note", ""),
+            ]
+        )
+
+    assessment = (source.get("assessment") if isinstance(source, dict) else None) or getattr(
+        source, "assessment", None
+    )
+    if isinstance(assessment, dict):
+        # 视图里是 asdict 的结果：重建成对象才能用到 sample_note 这类派生字段
+        assessment = FeasibilityAssessment(**assessment)
+    writer.writerow([])
+    writer.writerow(["报告编号", task_id])
+    writer.writerow(["生成日期", date.today().isoformat()])
+    if assessment is not None:
+        writer.writerow(["按现有证据可支持金额(约,元)", f"{assessment.legal_cap:.0f}"])
+        if assessment.case_low is not None:
+            writer.writerow(
+                ["类案区间(约,元)", f"{assessment.case_low:.0f} - {assessment.case_high:.0f}"]
+            )
+        else:
+            writer.writerow(["类案区间(约,元)", "暂不提供"])
+        writer.writerow(["样本量(件)", assessment.sample_size])
+        writer.writerow(["样本构成", assessment.sample_note])
+        writer.writerow(
+            [
+                "结论状态",
+                "证据不充分（待补证，本次不给结论性数字）"
+                if assessment.provisional
+                else "可给出结论性估算",
+            ]
+        )
+    writer.writerow(
+        [
+            "说明",
+            "金额由确定性规则逐项计算，不因证据不足而给主张金额打折；表中金额为按现有材料估算的约数。"
+            "本表仅供学习与参考，不构成法律意见，使用前请人工复核。",
+        ]
+    )
+    return buffer.getvalue()

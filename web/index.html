@@ -379,6 +379,9 @@
           <span class="badge text-bg-light border ms-auto" id="matrixBadge"></span>
         </div>
         <div class="card-body">
+          <div class="small fw-semibold text-secondary mb-2">上传材料解析</div>
+          <div class="form-text mt-0 mb-2">系统会真的打开材料读正文；读不到的会写明原因，不假装读到了。</div>
+          <div id="materialList" class="vstack gap-1 mb-3"></div>
           <div class="small fw-semibold text-secondary mb-2" id="ownEvidenceTitle">我方已提交的证据</div>
           <div id="ownEvidenceList" class="vstack gap-1 mb-3"></div>
           <div class="small fw-semibold text-secondary mb-2">逐项证据支撑</div>
@@ -432,16 +435,26 @@
       </div>
 
       <div class="card d-none" id="reportCard">
-        <div class="card-header d-flex align-items-center gap-2">
+        <div class="card-header d-flex align-items-center flex-wrap gap-2">
           <span>完整报告</span>
-          <button type="button" class="btn btn-outline-primary btn-sm ms-auto" id="exportDocxBtn">
-            导出 Word
-          </button>
-          <button type="button" class="btn btn-outline-secondary btn-sm" id="printBtn">
-            打印 / 存为 PDF
-          </button>
+          <div class="ms-auto d-flex align-items-center gap-2">
+            <select class="form-select form-select-sm w-auto" id="exportFormat" aria-label="导出格式">
+              <option value="md">Markdown 全文报告</option>
+              <option value="docx">Word 版分析报告</option>
+              <option value="csv">金额认定表（表格）</option>
+            </select>
+            <button type="button" class="btn btn-outline-primary btn-sm" id="exportBtn">导出</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="printBtn">
+              打印 / 存为 PDF
+            </button>
+          </div>
         </div>
-        <div class="card-body"><div id="report"></div></div>
+        <div class="card-body">
+          <div class="alert alert-warning py-2 px-3 small d-none" id="exportNotice">
+            导出内容为智能体分析结果，仅供学习与参考，不构成法律意见；金额为按现有材料估算的约数，使用前请人工复核。
+          </div>
+          <div id="report"></div>
+        </div>
       </div>
     </div>
 
@@ -696,6 +709,16 @@
       return {
         label: "第 " + p.round + " 轮",
         text: "针对 " + p.open_findings + " 条复核意见进入修订：修订方案 → 对方反驳 → 再次复核",
+        tone: "stage"
+      };
+    },
+    plan_decided: function (p) {
+      // 规划决策：明确写出这一步是「模型决定的」还是「规则兜底的」，便于现场讲解与追溯
+      var kinds = { research_keywords: "检索规划", continue_round: "轮次判定", action_order: "路径排序" };
+      var source = p.source === "llm" ? "模型决策" : "规则决策";
+      return {
+        label: kinds[p.kind] || "规划决策",
+        text: source + "：" + String(p.detail || ""),
         tone: "stage"
       };
     },
@@ -1706,6 +1729,55 @@
   }
 
   // 对话区：让用户看得见自己提交了什么，并在证据不足时继续第 2、第 3 轮
+  // 上传材料解析：哪些真的读到了正文、读到了什么、哪些读不到以及为什么
+  function renderMaterials(data) {
+    var box = $("materialList");
+    if (!box) { return; }
+    var items = data.materials || [];
+    var summary = data.material_summary || {};
+    box.innerHTML = "";
+    if (!items.length) {
+      box.innerHTML = '<div class="empty">没有上传材料，证据识别只依据案情描述。</div>';
+    }
+    items.forEach(function (item) {
+      var parsed = !!item.parsed;
+      var detail = "";
+      if (parsed) {
+        var bits = [String(item.text_chars || 0) + " 字"];
+        if (item.amounts && item.amounts.length) {
+          bits.push("金额 " + item.amounts.slice(0, 3).map(function (value) {
+            return Number(value).toLocaleString("zh-CN");
+          }).join(" / ") + " 元");
+        }
+        if (item.dates && item.dates.length) { bits.push("日期 " + item.dates[0]); }
+        if (item.case_no) { bits.push(item.case_no); }
+        if (item.court) { bits.push(item.court); }
+        detail = bits.join(" · ");
+      } else {
+        detail = item.reason || "未能解析";
+      }
+      var row = document.createElement("div");
+      row.className = "evidence-row reveal-up";
+      row.innerHTML = '<span class="name">' + escapeHtml(String(item.name || "材料")) + '</span>'
+        + '<span class="badge ' + (parsed ? "text-bg-success" : "text-bg-secondary") + '">'
+        + (parsed ? "已解析" : "未解析") + '</span>'
+        + '<span class="note">' + escapeHtml(String(detail)) + '</span>';
+      box.appendChild(row);
+    });
+    if (summary.text) {
+      var line = document.createElement("div");
+      line.className = "form-text";
+      line.textContent = "材料解析：" + summary.text;
+      box.appendChild(line);
+    }
+    if (data.redaction_note) {
+      var redact = document.createElement("div");
+      redact.className = "form-text";
+      redact.textContent = "对外发送前：" + data.redaction_note;
+      box.appendChild(redact);
+    }
+  }
+
   // 证据与举证情况：我方提交了什么、每项主张靠什么撑着、对方该举什么证
   function renderEvidenceMatrix(data) {
     var card = $("evidenceMatrixCard");
@@ -1713,11 +1785,14 @@
     var evidence = info.evidence || {};
     var findings = data.item_findings || [];
     var requests = data.evidence_request || [];
-    if (data.out_of_scope || (!Object.keys(evidence).length && !findings.length)) {
+    var materials = data.materials || [];
+    if (data.out_of_scope
+        || (!Object.keys(evidence).length && !findings.length && !materials.length)) {
       card.classList.add("d-none");
       return;
     }
     card.classList.remove("d-none");
+    renderMaterials(data);
 
     var titles = {
       claimant: ["证据与举证情况", "我方已提交的证据", "对方的举证情况（对方可能质疑的点）"],
@@ -2142,10 +2217,23 @@
   $("sampleCriminal").addEventListener("click", function () { fillSample("criminal"); });
   $("sampleBigRisk").addEventListener("click", function () { fillSample("bigrisk"); });
   $("templateBtn").addEventListener("click", insertTemplate);
-  $("exportDocxBtn").addEventListener("click", function () {
+  $("exportBtn").addEventListener("click", function () {
     if (!currentTask) { return; }
-    addLog("导出报告", "正在生成 Word 报告（可直接打印/发送）…", "muted");
-    window.open("/api/tasks/" + currentTask + "/export?format=docx", "_blank");
+    var formatSelect = $("exportFormat");
+    var fmt = (formatSelect && formatSelect.value) || "md";
+    var label = fmt === "csv" ? "金额认定表"
+      : (fmt === "docx" ? "Word 版分析报告" : "Markdown 全文报告");
+    // 导出前先把性质说清楚：这是参考性质的分析结果，不是可径行使用的法律文书
+    var confirmed = window.confirm(
+      "即将导出「" + label + "」。\n\n" +
+      "内容为智能体分析结果，仅供学习与参考，不构成法律意见，不替代执业律师；" +
+      "金额为按现有材料估算的约数，最终以证据和裁判认定为准，使用前请人工复核。\n\n确认导出？"
+    );
+    if (!confirmed) { return; }
+    var notice = $("exportNotice");
+    if (notice) { notice.classList.remove("d-none"); }
+    addLog("导出报告", "正在生成" + label + "…", "muted");
+    window.open("/api/tasks/" + currentTask + "/export?format=" + encodeURIComponent(fmt), "_blank");
   });
   $("printBtn").addEventListener("click", function () {
     // 打印前展开全部折叠章节，保证 PDF 里内容完整

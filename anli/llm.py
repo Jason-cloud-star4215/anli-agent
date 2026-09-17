@@ -96,6 +96,11 @@ class LLMClient:
         self.last_failure = ""
         self.retry_backoff = 1.5
         self.breaker_threshold = 2
+        # 成本与耗时统计：calls 只数成功，attempts 数实际发出的请求，
+        # seconds 与 usage 用于报告末尾的成本行（见 anli/cost.py）
+        self.attempts = 0
+        self.seconds = 0.0
+        self.usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
     @property
     def circuit_open(self) -> bool:
@@ -138,10 +143,14 @@ class LLMClient:
         last_reason = ""
         for attempt in (0, 1):  # 首次 + 最多一次自动重试
             response_body = None
+            # 每一次真实发出的请求都计入 attempts 与耗时：失败与重试同样有成本
+            self.attempts += 1
+            started = time.monotonic()
             try:
                 with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
                     response_body = json.loads(response.read().decode("utf-8"))
             except urllib.error.HTTPError as exc:
+                self.seconds += time.monotonic() - started
                 detail = exc.read().decode("utf-8", errors="ignore")[:300]
                 last_reason = f"HTTP {exc.code}：{detail[:120]}"
                 # 429 限流与 5xx 服务端错误可重试；401/402/400 这类配置性问题不重试
@@ -150,6 +159,7 @@ class LLMClient:
                     continue
                 break
             except Exception as exc:  # noqa: BLE001
+                self.seconds += time.monotonic() - started
                 timed_out = isinstance(exc, (TimeoutError, socket.timeout)) or (
                     "timed out" in str(exc).lower()
                 )
@@ -160,8 +170,10 @@ class LLMClient:
                     continue
                 break
             else:
+                self.seconds += time.monotonic() - started
                 self.calls += 1
                 self.consecutive_failures = 0
+                self._merge_usage(response_body.get("usage"))
                 try:
                     return response_body["choices"][0]["message"]["content"]
                 except (KeyError, IndexError) as exc:
@@ -187,6 +199,16 @@ class LLMClient:
         except (TypeError, ValueError):
             pass
         return self.retry_backoff
+
+    def _merge_usage(self, usage: object) -> None:
+        """累加接口返回的 token 用量。服务端不给 usage 时保持为 0，报告里如实写「未提供」。"""
+
+        if not isinstance(usage, dict):
+            return
+        for key in self.usage:
+            value = usage.get(key)
+            if isinstance(value, (int, float)):
+                self.usage[key] += int(value)
 
     # ------------------------------------------------------------------ JSON 调用
     def chat_json(

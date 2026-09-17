@@ -11,11 +11,13 @@ from __future__ import annotations
 
 import argparse
 import base64
+import io
 import json
 import sys
 import time
 import urllib.error
 import urllib.request
+import zipfile
 
 RESULTS: list[tuple[str, bool, str]] = []
 
@@ -54,6 +56,9 @@ CAR_DESC = (
     "我想要对方赔我12000元。"
 )
 
+# 刻意不提任何证据名称：用来验证证据是「从材料正文读到的」
+BARE_DESC = "我骑电动车被一辆小轿车撞了，交警认定对方主要责任，我想要对方赔偿。"
+
 
 def create_task(
     base: str, role: str, desc: str = CAR_DESC, expectation: float = 12000
@@ -71,6 +76,18 @@ def create_task(
         },
     )
     return data.get("task_id", "")
+
+
+def download(base: str, path: str) -> tuple[int, bytes]:
+    """下载导出文件，返回 (状态码, 字节)。"""
+
+    url = base.rstrip("/") + path
+    req = urllib.request.Request(url, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:  # noqa: S310
+            return resp.status, resp.read()
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.read()
 
 
 def wait_done(base: str, task_id: str, timeout: float = 180) -> dict:
@@ -105,6 +122,56 @@ def main(argv: list[str] | None = None) -> int:
     check("报告包含立场分析", "我方主张要点" in claimant.get("report", ""))
     check("报告包含补证章节", "需要你补充的证据" in claimant.get("report", ""))
     check("证据充分度有值", isinstance(claimant.get("evidence_sufficiency"), (int, float)))
+
+    # 规划决策：哪一步是模型决定的、哪一步是规则兜底的，必须看得见
+    decisions = claimant.get("planning_decisions") or []
+    kinds = {item.get("kind") for item in decisions}
+    check("规划决策留痕透出", len(decisions) >= 2, f"{len(decisions)} 条")
+    check("包含检索与路径两类决策", {"research_keywords", "action_order"} <= kinds, str(sorted(kinds)))
+    check(
+        "决策标注了来源",
+        all(item.get("source") in {"llm", "rules"} and item.get("detail") for item in decisions),
+    )
+    report_text = claimant.get("report", "")
+    check("报告含检索决策留痕", "检索决策留痕" in report_text)
+    check("报告含路径排序依据", "排序依据" in report_text)
+
+    # 成本行：没有单价就必须如实写「不估算」，不能报 0 元假装免费
+    cost = claimant.get("cost") or {}
+    cost_text = str(cost.get("text", ""))
+    check("成本信息透出", "calls" in cost and "seconds" in cost, cost_text)
+    check("成本行进入结论摘要", "本次分析：" in claimant.get("summary", ""))
+    if cost.get("calls"):
+        check(
+            "调用了模型就有成本口径",
+            any(word in cost_text for word in ("估算成本", "无法估算", "未配置单价")),
+            cost_text,
+        )
+    else:
+        check("规则版如实标注未调用模型", "未调用大模型" in cost_text, cost_text)
+
+    # 导出：三种格式都要能下载，且内容与页面同源
+    status, body = download(base, f"/api/tasks/{task}/export?format=md")
+    check(
+        "导出 Markdown 报告",
+        status == 200 and "案理 · 法律分析报告" in body.decode("utf-8", "ignore"),
+        f"status={status} {len(body)} 字节",
+    )
+    status, body = download(base, f"/api/tasks/{task}/export?format=csv")
+    csv_text = body.decode("utf-8-sig", "ignore")
+    check(
+        "导出金额认定表",
+        status == 200 and csv_text.startswith("序号,赔偿项目") and "报告编号" in csv_text,
+        f"status={status} {len(body)} 字节",
+    )
+    status, body = download(base, f"/api/tasks/{task}/export?format=docx")
+    docx_ok = status == 200 and body[:2] == b"PK"
+    if docx_ok:
+        with zipfile.ZipFile(io.BytesIO(body)) as package:
+            docx_ok = "word/document.xml" in package.namelist()
+    check("导出 Word 报告", docx_ok, f"status={status} {len(body)} 字节")
+    status, _ = download(base, f"/api/tasks/{task}/export?format=pdf")
+    check("不支持的导出格式被拒绝", status == 400, f"status={status}")
 
     before_cap = (claimant.get("assessment") or {}).get("legal_cap", 0)
     status, _ = request(
@@ -205,6 +272,42 @@ def main(argv: list[str] | None = None) -> int:
         "抗辩方策略不出现「多主张」",
         not any("多主张" in item.get("expected", "") for item in defendant.get("strategies", [])),
     )
+
+    # 材料正文解析：读得到的要真读到，读不到的必须如实标注
+    doc = "随附医疗费发票、工资流水。医疗费3200元，2024年5月3日就诊。".encode("utf-8")
+    image = b"\xff\xd8\xff\xe0not-an-image"
+    _, created = request(
+        base,
+        "/api/tasks",
+        {
+            "description": BARE_DESC,
+            "role": "claimant",
+            "expectation": 12000,
+            "file_names": ["材料说明.txt", "IMG_0001.jpg"],
+            "files": [
+                {"name": "材料说明.txt", "data": base64.b64encode(doc).decode("ascii")},
+                {"name": "IMG_0001.jpg", "data": base64.b64encode(image).decode("ascii")},
+            ],
+            "confirmed": [],
+        },
+    )
+    material_task = wait_done(base, created.get("task_id", ""))
+    materials = {item.get("name"): item for item in (material_task.get("materials") or [])}
+    check("材料解析结果透出", len(materials) == 2, f"{len(materials)} 份")
+    txt = materials.get("材料说明.txt", {})
+    check("文本材料被真正读到", bool(txt.get("parsed")) and txt.get("text_chars", 0) > 10, str(txt.get("reason", "")))
+    check("从材料正文抽出金额", 3200.0 in (txt.get("amounts") or []), str(txt.get("amounts")))
+    check("从材料正文抽出日期", "2024-05-03" in (txt.get("dates") or []), str(txt.get("dates")))
+    image_fact = materials.get("IMG_0001.jpg", {})
+    check("图片如实标注未解析", image_fact.get("parsed") is False and "OCR" in str(image_fact.get("reason", "")))
+    check(
+        "未解析材料不产生证据",
+        "医疗费票据" in (material_task.get("understanding") or {}).get("evidence", {})
+        or "工资流水" in (material_task.get("understanding") or {}).get("evidence", {}),
+        "材料正文里的证据应进入证据表",
+    )
+    summary_text = (material_task.get("material_summary") or {}).get("text", "")
+    check("材料解析有汇总说明", "共 2 份材料" in summary_text and "未解析 1 份" in summary_text, summary_text)
 
     status, data = request(base, "/api/tasks", {"description": "", "role": "claimant"})
     check("空描述被拒绝", status == 400, f"status={status}")

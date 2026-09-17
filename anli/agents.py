@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Callable
 
+from .redact import redact
 from .events import EventBus
 from .models import (
     AgentResult,
@@ -40,6 +41,16 @@ class AgentContext:
     expectation: float = 0.0
     extra: dict = field(default_factory=dict)
 
+
+
+def user_text_for_llm(text: str) -> str:
+    """发给模型的原话必须先脱敏：身份证/银行卡等打码后再出门。
+
+    案情理解入口（llm_intake）已各自脱敏；这里兜住论证/评估阶段的重复引用，
+    保证「原话」不管从哪个出口发给第三方服务都不带明文敏感信息。
+    """
+
+    return redact(text or "")
 
 
 def _filter_provisions_by_cause(provisions: list, cause: str) -> list:
@@ -195,7 +206,11 @@ class ResearcherAgent(BaseAgent):
 
     def act(self, context: AgentContext) -> AgentResult:
         profile = context.profile
-        keywords = [profile.cause] + profile.disputed_points[:3]
+        # 检索词由编排层的 planner 决策（模型参与 + 白名单校验）；
+        # 没拿到决策时退回规则词，行为与以前一致
+        keywords = list(context.extra.get("research_keywords") or []) or (
+            [profile.cause] + profile.disputed_points[:3]
+        )
         self.bus.emit("retrieval_started", context.task_id, {"agent": self.role.value})
         for keyword in keywords[:2]:
             self.bus.emit(
@@ -553,7 +568,7 @@ class AdvocacyAgent(BaseAgent):
             f"你的身份：{playbook['title']}\n"
             f"{playbook['goal']}\n"
             f"案由：{profile.cause}\n"
-            f"用户原话：{profile.description or profile.summary}\n"
+            f"用户原话：{user_text_for_llm(profile.description or profile.summary)}\n"
             f"责任比例：{profile.responsibility_ratio:.0%}\n"
             f"现有证据：{'、'.join(profile.available_evidence) or '无'}\n"
             f"缺失证据：{'、'.join(profile.missing_evidence) or '无'}\n"
@@ -629,7 +644,7 @@ class JudgeAgent(BaseAgent):
             "你是中立的评估者，只做证据与论证质量的评估，不给出胜诉败诉的确定结论。",
             (
                 f"案由：{profile.cause}\n"
-                f"用户原话：{profile.description or profile.summary}\n"
+                f"用户原话：{user_text_for_llm(profile.description or profile.summary)}\n"
                 f"责任比例：{profile.responsibility_ratio:.0%}\n"
                 f"现有证据：{'、'.join(profile.available_evidence) or '无'}\n"
                 f"缺失证据：{'、'.join(profile.missing_evidence) or '无'}\n"
@@ -715,7 +730,7 @@ class RevisionAgent(BaseAgent):
             "不得编造法条、案号或金额，金额类结论只能引用给定数据。",
             (
                 f"案由：{context.profile.cause}\n"
-                f"用户原话：{context.profile.description or context.profile.summary}\n"
+                f"用户原话：{user_text_for_llm(context.profile.description or context.profile.summary)}\n"
                 f"现有证据：{'、'.join(context.profile.available_evidence) or '无'}\n"
                 f"缺失证据：{'、'.join(context.profile.missing_evidence) or '无'}\n"
                 f"可支持金额：{context.legal_cap:.0f} 元\n"
@@ -798,7 +813,7 @@ class RedTeamAgent(BaseAgent):
             "不得编造法条或案号，不得重复已有的发现。",
             (
                 f"案由：{context.profile.cause}\n"
-                f"用户原话：{context.profile.description or context.profile.summary}\n"
+                f"用户原话：{user_text_for_llm(context.profile.description or context.profile.summary)}\n"
                 f"现有证据：{'、'.join(context.profile.available_evidence) or '无'}\n"
                 f"缺失证据：{'、'.join(context.profile.missing_evidence) or '无'}\n"
                 f"已有发现：{'；'.join(f'{f.category}：{f.detail}' for f in findings) or '无'}\n"

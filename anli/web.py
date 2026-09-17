@@ -26,10 +26,11 @@ from .evidence_chain import QUALITY_QUESTIONS
 from .intake import extract_expectation
 from .llm import LLMClient, candidate_env_files
 from .llm_intake import build_profile_llm
+from .materials import load_facts, parse_material
 from .models import Role, TaskState
 from .orchestrator import Orchestrator
 from .standards import StandardsStore
-from .exporter import build_markdown_export, export_model_from_record, export_model_from_view, render_markdown
+from .exporter import build_csv_export, export_model_from_record, export_model_from_view, render_markdown
 from .docx_export import build_docx
 from urllib.parse import parse_qs, quote as _urlquote, urlparse
 from .paths import resource_path, user_root
@@ -76,6 +77,7 @@ def build_view(record, report: str = "", error: str = "") -> dict:
     # 之前这里会把「案由：一般民事纠纷 / 责任比例：100% / 争议焦点」这类民事分析
     # 一起发给前端，等于对刑事案件做了民事分析，既没意义也踩红线。
     out_of_scope = bool(record and record.extra.get("out_of_scope"))
+    profile_extra = (record.profile.extra or {}) if record and record.profile else {}
     return {
         "code": 0,
         "state": record.state.value,
@@ -120,6 +122,12 @@ def build_view(record, report: str = "", error: str = "") -> dict:
         "evidence_sufficiency": record.extra.get("evidence_sufficiency")
         if record
         else None,
+        # 上传材料的正文解析结果：哪些真的读到了、哪些读不到、为什么
+        "materials": profile_extra.get("material_facts", []) if not out_of_scope else [],
+        "material_summary": profile_extra.get("material_summary", {}) if not out_of_scope else {},
+        # 对外发送前的脱敏说明（哪些个人信息被打码）
+        "redaction_note": profile_extra.get("redaction_note", "") if record else "",
+        "sent_raw_text": bool(profile_extra.get("sent_raw_text")) if record else False,
         "intake_source": record.extra.get("intake_source", "") if record else "",
         "llm_status": record.extra.get("llm_status", "") if record else "",
         "llm_status_text": record.extra.get("llm_status_text", "") if record else "",
@@ -127,6 +135,8 @@ def build_view(record, report: str = "", error: str = "") -> dict:
         "llm_failures": record.extra.get("llm_failures", 0) if record else 0,
         "llm_retries": record.extra.get("llm_retries", 0) if record else 0,
         "llm_last_failure": record.extra.get("llm_last_failure", "") if record else "",
+        # 成本与耗时：结论摘要末尾已含同一句话，这里再给一份结构化数据
+        "cost": record.extra.get("cost") or {} if record else {},
         "report": report,
         "findings": [asdict(item) for item in record.findings] if record else [],
         "citations": [asdict(item) for item in record.citations] if record else [],
@@ -134,6 +144,8 @@ def build_view(record, report: str = "", error: str = "") -> dict:
         "human_channels": record.extra.get("human_channels", []) if record else [],
         "out_of_scope": (record.extra.get("out_of_scope") or None) if record else None,
         "revisions": record.extra.get("revisions", []) if record else [],
+        # 规划决策留痕：哪些步骤是模型决定的、哪些退回了规则版
+        "planning_decisions": record.extra.get("planning_decisions", []) if record else [],
         "rounds": record.extra.get("rounds", []) if record else [],
         "max_rounds": MAX_ROUNDS,
         "approved": bool(record.extra.get("approved")) if record else False,
@@ -308,6 +320,7 @@ def _run_task(
     approved: bool = False,
     request: dict | None = None,
     waive_all: bool = False,
+    material_facts: list | None = None,
 ) -> None:
     events: queue.Queue = TASKS[task_id]["events"]
 
@@ -337,6 +350,7 @@ def _run_task(
             waived_evidence=waived_evidence or [],
             quality_answers=quality_answers or {},
             waive_all=waive_all,
+            material_facts=load_facts(material_facts),
         )
         if skip_reason:
             profile.extra["intake_note"] = skip_reason
@@ -412,6 +426,7 @@ def _start_task(
     region: str = DEFAULT_REGION,
     approved: bool = False,
     waive_all: bool = False,
+    material_facts: list | None = None,
 ) -> None:
     """启动（或重启）一次分析，重置事件队列供前端重新订阅。"""
 
@@ -431,6 +446,8 @@ def _start_task(
         "quality_answers": {
             key: list(value) for key, value in (quality_answers or {}).items()
         },
+        # 材料正文解析结果随请求进检查点：补交轮次直接复用，不重复解析
+        "material_facts": [dict(item) for item in (material_facts or [])],
     }
     TASKS[task_id]["request"] = request
     # 第 1 轮 = 初次提交；后续轮次由补交接口追加，避免重复计数
@@ -462,6 +479,7 @@ def _start_task(
             bool(approved),
             request,
             bool(waive_all),
+            list(material_facts or []),
         ),
         daemon=True,
     ).start()
@@ -559,6 +577,7 @@ class Handler(BaseHTTPRequestHandler):
             waived,
             quality,
             region,
+            material_facts=list(saved.get("facts") or []),
         )
         self._json({"code": 0, "task_id": task_id})
 
@@ -629,6 +648,14 @@ class Handler(BaseHTTPRequestHandler):
         request["evidence_names"] = list(request.get("evidence_names") or []) + list(
             saved.get("names") or []
         )
+        # 新材料解析结果并进已有结果（按文件名去重），补交轮次不重复解析旧材料
+        existing_facts = list(request.get("material_facts") or [])
+        known_names = {str(item.get("name")) for item in existing_facts}
+        for fact in saved.get("facts") or []:
+            if str(fact.get("name")) not in known_names:
+                existing_facts.append(fact)
+                known_names.add(str(fact.get("name")))
+        request["material_facts"] = existing_facts
         confirmed = list(request.get("confirmed_evidence") or []) + [
             str(name) for name in (payload.get("confirmed") or [])
         ]
@@ -672,13 +699,19 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"code": 0, "task_id": task_id})
 
     def _save_uploads(self, task_id: str, files: list) -> dict:
-        """把用户上传的证据落盘，返回文件名列表。"""
+        """把用户上传的材料落盘，并**立刻读一遍正文**。
+
+        以前这里只返回文件名，正文从未被打开（P0-4）。
+        现在落盘后当场解析：证据识别用正文里的线索，金额还要跟用户自述对一遍。
+        客户端可以只报名单（字符串）：只登记不落盘，自然也无正文可读。
+        """
 
         if not files:
             return {}
         upload_dir = ROOT / "cases" / task_id / "uploads"
         upload_dir.mkdir(parents=True, exist_ok=True)
         names: list[str] = []
+        facts: list[dict] = []
         total = 0
         for item in files:
             # 客户端可以只报名单（字符串），也可以带内容（{name, data}）；
@@ -699,9 +732,14 @@ class Handler(BaseHTTPRequestHandler):
             if total > MAX_UPLOAD_BYTES:
                 return {"error": "上传材料总体积超过 8MB 限制"}
             safe = "".join(ch for ch in name if ch not in '\\/:*?"<>|') or "材料"
-            (upload_dir / safe).write_bytes(raw)
+            target = upload_dir / safe
+            if target.exists():
+                # 同名材料不能互相覆盖，否则用户以为都交了、实际只剩最后一份
+                target = upload_dir / f"{target.stem}-{len(names) + 1}{target.suffix}"
+            target.write_bytes(raw)
             names.append(name)
-        return {"names": names}
+            facts.append(parse_material(target, name).to_dict())
+        return {"names": names, "facts": facts}
 
     # ------------------------------------------------------------------ 内部
     def _stream(self, task_id: str) -> None:
@@ -730,15 +768,21 @@ class Handler(BaseHTTPRequestHandler):
                 return
 
     def _export(self, task_id: str) -> None:
-        """导出整份分析报告（默认 Word，可带 ?format=md 导出 Markdown）。
+        """导出交付物（默认 Word；?format=md 分析报告、?format=csv 金额认定表）。
 
         服务重启后进程内没有记录：退回检查点里的前端视图重建文档，
         用户不需要因为"重启过"而重新跑一遍。
         """
 
-        fmt = parse_qs(urlparse(self.path).query).get("format", ["docx"])[0].lower()
+        fmt = (
+            parse_qs(urlparse(self.path).query).get("format", ["docx"])[0].lower().strip()
+        )
+        if fmt not in {"md", "csv", "docx"}:
+            self._json({"code": 400, "msg": f"不支持的导出格式：{fmt}"}, status=400)
+            return
         task = TASKS.get(task_id)
         record = (task or {}).get("record")
+        source = record
         if record is not None:
             model = export_model_from_record(record, task_id)
         else:
@@ -749,19 +793,30 @@ class Handler(BaseHTTPRequestHandler):
                     status=404,
                 )
                 return
+            source = view
             model = export_model_from_view(view, task_id)
 
         if fmt == "md":
             body = render_markdown(model).encode("utf-8")
             content_type = "text/markdown; charset=utf-8"
             extension = "md"
+        elif fmt == "csv":
+            # BOM 是给 Excel 用的：没有它中文表头在中文 Windows 上会乱码
+            body = build_csv_export(source, task_id).encode("utf-8-sig")
+            content_type = "text/csv; charset=utf-8"
+            extension = "csv"
         else:
             body = build_docx(model)
             content_type = (
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             )
             extension = "docx"
-        filename = _urlquote(f"案理法律分析报告-{task_id}.{extension}")
+        name = (
+            f"案理金额认定表-{task_id}.{extension}"
+            if extension == "csv"
+            else f"案理法律分析报告-{task_id}.{extension}"
+        )
+        filename = _urlquote(name)
         self.send_response(200)
         self.send_header("Content-Type", content_type)
         self.send_header(
