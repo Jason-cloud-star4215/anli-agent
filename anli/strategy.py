@@ -87,7 +87,32 @@ def _amount_strategies(
 ) -> list[Strategy]:
     out: list[Strategy] = []
 
-    for item in profile.extra.get("unquantified_items") or []:
+    unquantified = list(profile.extra.get("unquantified_items") or [])
+    if len(unquantified) >= 2:
+        # 多项未量化时聚合成一条，避免 P0 列表出现五条几乎一样的「补充XX金额」
+        joined = "、".join(unquantified)
+        if role == Role.CLAIMANT:
+            out.append(
+                Strategy(
+                    priority="P0",
+                    action=f"补齐这几项损失的金额与凭证：{joined}",
+                    reason="提到但没有金额的项目，系统无法计入损失",
+                    expected="补齐后这些项目才能进入主张范围",
+                    materials=[f"{item}的凭证或计算依据" for item in unquantified],
+                )
+            )
+        elif role == Role.DEFENDANT:
+            out.append(
+                Strategy(
+                    priority="P1",
+                    action=f"要求对方就{joined}给出金额和计算依据",
+                    reason="对方只提项目却没给金额，这部分主张尚未成立",
+                    expected="对方举证不能的部分不应计入赔偿",
+                    materials=["举证通知书回复", "质证意见"],
+                )
+            )
+        unquantified = []
+    for item in unquantified:
         if role == Role.CLAIMANT:
             out.append(
                 Strategy(

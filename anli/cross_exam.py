@@ -126,10 +126,22 @@ _TAIL = {
 }
 
 
-def render_challenges(challenges: list[Challenge], role: Role = Role.CLAIMANT) -> str:
-    """把质证清单渲染进交付物；同一份清单，三种身份看到三种措辞。"""
+def render_challenges(
+    challenges: list[Challenge], role: Role = Role.CLAIMANT, pending_note: str = ""
+) -> str:
+    """把质证清单渲染进交付物；同一份清单，三种身份看到三种措辞。
+
+    pending_note：尚未量化或补齐凭证的项目清单（如「护理费、交通费」）。
+    质证清单只覆盖"已量化并进入逐项认定"的项目，若还有未量化项目，
+    不能声称"没有攻击空间"——那会把缺证据的软肋漏报给用户。
+    """
 
     if not challenges:
+        if pending_note:
+            return (
+                f"以下项目尚未给出金额或补齐凭证，本次无法生成质证清单：{pending_note}；"
+                "补齐后可据此生成逐项攻防要点。"
+            )
         return (
             "逐项认定中所有项目都有材料支撑，对方没有明显的攻击空间；"
             "仍建议保留全部凭证原件备查。"

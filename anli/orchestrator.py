@@ -724,6 +724,7 @@ class Orchestrator:
         numerals = [
             "一", "二", "三", "四", "五", "六",
             "七", "八", "九", "十", "十一", "十二",
+            "十三", "十四", "十五", "十六", "十七", "十八", "十九", "二十",
         ]
         for index, artifact in enumerate(record.artifacts):
             number = numerals[index] if index < len(numerals) else str(index + 1)
@@ -827,11 +828,16 @@ class Orchestrator:
         # 结构化质证：逐条落到「项目+证据+异议类型+金额+成立后果」，按身份给不同打法
         challenges = build_challenges(profile)
         record.extra["challenges"] = [item.to_dict() for item in challenges]
+        pending_items = list(profile.extra.get("unquantified_items") or []) + list(
+            (profile.blocked_items or {}).keys()
+        )
         artifacts.append(
             Artifact(
                 kind="cross_exam",
                 title="质证争点清单",
-                body=render_challenges(challenges, record.role),
+                body=render_challenges(
+                    challenges, record.role, pending_note="、".join(pending_items)
+                ),
             )
         )
 
@@ -1032,7 +1038,16 @@ class Orchestrator:
                     ["法条依据："] + (law_lines or ["- 暂无通过核验的法条依据"])
                     + (["", "官方库核对（仅证明该法存在，不代替条文正文核验）："] + law_source_lines
                        if law_source_lines else [])
-                    + ["", "类案参照："] + case_lines
+                    + [
+                        "",
+                        "类案参照："
+                        + (
+                            "（因损失量级不匹配，以下样本仅作流程演示留痕，未被区间采用）"
+                            if getattr(assessment, "magnitude_mismatch", False)
+                            else ""
+                        ),
+                    ]
+                    + case_lines
                     + ["", "官方真实案例参照（最高人民法院指导性案例缓存）："] + official_lines
                     + ([""] + sample_lines if sample_lines else [])
                 ),
@@ -1124,13 +1139,13 @@ class Orchestrator:
                 for item in findings
                 if not item.resolved and item.severity in {Severity.HIGH, Severity.MEDIUM}
             ]
-            revision_lines.append(
-                "仍未解决（需要你补材料或人工核实）："
-                + (
-                    "；".join(f"{item.category}：{item.detail}" for item in unresolved)
-                    or "无"
-                )
-            )
+            if unresolved:
+                revision_lines.append("仍未解决（需要你补材料或人工核实）：")
+                revision_lines += [
+                    f"  · {item.category}：{item.detail}" for item in unresolved
+                ]
+            else:
+                revision_lines.append("仍未解决（需要你补材料或人工核实）：无")
         artifacts.append(
             Artifact(
                 kind="revision",

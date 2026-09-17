@@ -74,7 +74,7 @@ def build_docx(model: dict) -> bytes:
     pieces.append(_paragraph(f"边界声明：{model.get('boundary', '')}", size=META_SIZE, after=240))
 
     for index, (title, body) in enumerate(model["sections"]):
-        number = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十", "十一", "十二"]
+        number = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十", "十一", "十二", "十三", "十四", "十五", "十六", "十七", "十八", "十九", "二十"]
         label = number[index] if index < len(number) else str(index + 1)
         pieces.append(_paragraph(f"{label}、{title}", bold=True, size=H2_SIZE, color=BRAND, after=160))
         pieces.extend(_body_paragraphs(body))

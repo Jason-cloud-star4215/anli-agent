@@ -54,31 +54,32 @@ def render_judgment(
         if info.get("kind") == "supported"
     ]
     counted_lines = [f"{item} {float(info.get('amount') or 0):,.0f} 元" for item, info in supported]
+    points: list[str] = []
     if profile.claim_items:
-        lines.append(
-            "1. 关于赔偿项目：经逐项审查，以下项目有证据支撑、予以认定："
+        points.append(
+            "关于赔偿项目：经逐项审查，以下项目有证据支撑、予以认定："
             + "、".join(
                 f"{item} {amount:,.0f} 元" for item, amount in profile.claim_items.items()
             )
             + "。"
+            + ("另予认定：" + "、".join(counted_lines) + "。" if counted_lines else "")
         )
     else:
-        lines.append(
-            "1. 关于赔偿项目：原告所列各项均未能提供有效凭证，属举证不能，本案均不予认定。"
-        )
-    if supported:
-        lines.append("   另予认定：" + "、".join(counted_lines) + "。")
+        points.append("关于赔偿项目：原告所列各项均未能提供有效凭证，属举证不能，本案均不予认定。")
     excluded = list((profile.blocked_items or {}).keys())
     if excluded:
-        lines.append(
-            "2. 关于未能计入的项目："
+        points.append(
+            "关于未能计入的项目："
             + "、".join(excluded)
             + " 依证据状况与法定标准另行确定，本案暂不计入；原告可补充证据后另行主张。"
         )
+    points.append(
+        f"关于责任比例：按被告承担 {profile.responsibility_ratio:.0%} 计算，"
+        f"被告应赔偿金额为 {assessment.legal_cap:,.0f} 元。"
+    )
+    points.append("关于类案参照：详见下节。")
+    lines += [f"{index}. {text}" for index, text in enumerate(points, start=1)]
     lines += [
-        f"3. 关于责任比例：按被告承担 {profile.responsibility_ratio:.0%} 计算，"
-        f"被告应赔偿金额为 {assessment.legal_cap:,.0f} 元。",
-        "4. 关于类案参照：详见下节。",
         "",
         "四、本院参考类案",
     ]

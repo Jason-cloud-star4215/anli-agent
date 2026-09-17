@@ -153,6 +153,10 @@ class CaseStore:
 
         scored: list[tuple[float, CaseRecord]] = []
         for case in self.official:
+            # 案由不符一律不引用：关键词打分（如「机动车」）会把反垄断案的
+            # 「机动车检测公司」拉进交通事故参照，宁可少参照也不能张冠李戴
+            if case_type and case.case_type != case_type:
+                continue
             haystack = (
                 f"{case.dispute}{case.holding}{case.case_type}"
                 f"{''.join(case.keywords)}{case.case_no}"

@@ -22,7 +22,7 @@ ROLE_LABEL = {
     Role.JUDGE: "法官（中立）视角",
 }
 
-NUMERALS = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十", "十一", "十二"]
+NUMERALS = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十", "十一", "十二", "十三", "十四", "十五", "十六", "十七", "十八", "十九", "二十"]
 
 BOUNDARY = (
     "本报告由「案理」智能体自动生成，仅供学习与参考，不构成法律意见，不替代执业律师。"
@@ -58,6 +58,18 @@ def export_model_from_record(record: TaskRecord, task_id: str) -> dict:
     llm_calls = record.extra.get("llm_calls", 0)
     assessment = record.assessment
     tier = getattr(assessment, "case_tier", "") if assessment else ""
+    if not tier and assessment is not None:
+        # 主干评估模型没有 case_tier 字段：按样本构成推导，避免导出显示「未标注」
+        sample = int(getattr(assessment, "sample_size", 0) or 0)
+        synthetic = int(getattr(assessment, "synthetic_sample_size", 0) or 0)
+        if sample == 0:
+            tier = "none"
+        elif synthetic >= sample:
+            tier = "demo"
+        elif synthetic > 0:
+            tier = "mixed"
+        else:
+            tier = "real"
     return {
         "title": "案理 · 法律分析报告",
         "meta": [

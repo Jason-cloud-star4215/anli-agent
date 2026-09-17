@@ -41,6 +41,25 @@ class AgentContext:
     extra: dict = field(default_factory=dict)
 
 
+
+def _filter_provisions_by_cause(provisions: list, cause: str) -> list:
+    """案由与法条领域隔离：消费维权类条文不进交通事故案，交强险类条文不进消费案。
+
+    检索是按关键词打分的，通用词（如「赔偿」）会把无关条法拉进结果——
+    让消保法出现在交通事故报告的「法条依据」里，是对专业性的直接失分。
+    宁可少引用，不可错引用。
+    """
+
+    filtered = []
+    for item in provisions:
+        topics = set(getattr(item, "topics", None) or [])
+        if "消费维权" in topics and cause != "消费维权":
+            continue
+        if ("交通事故" in topics or "交强险" in topics) and cause == "消费维权":
+            continue
+        filtered.append(item)
+    return filtered
+
 class BaseAgent:
     """最小 Agent Loop：规划 → 执行 → 观察 → 自检。"""
 
@@ -204,7 +223,9 @@ class ResearcherAgent(BaseAgent):
                 region=profile.region,
                 evidence=list(profile.available_evidence),
             )
-            provisions: list[LegalProvision] = law_future.result()
+            provisions: list[LegalProvision] = _filter_provisions_by_cause(
+                law_future.result(), profile.cause
+            )
             cases: list[CaseRecord] = case_future.result()
 
         for index, provision in enumerate(provisions, start=1):
@@ -440,8 +461,11 @@ class AdvocacyAgent(BaseAgent):
 
     def act(self, context: AgentContext) -> AgentResult:
         profile = context.profile
-        provisions: list[LegalProvision] = self.call_tool(
-            "law_lookup", keywords=[profile.cause] + profile.disputed_points[:2]
+        provisions: list[LegalProvision] = _filter_provisions_by_cause(
+            self.call_tool(
+                "law_lookup", keywords=[profile.cause] + profile.disputed_points[:2]
+            ),
+            profile.cause,
         )
         self.emit_delta(
             context,

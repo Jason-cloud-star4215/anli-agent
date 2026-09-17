@@ -46,8 +46,14 @@ UA = (
     "(KHTML, like Gecko) Chrome/126.0 Safari/537.36"
 )
 
+# 先排除的专属领域：这些案由的文本里常出现「机动车」等泛词，
+# 必须先判出去，否则反垄断案（机动车检测公司）会被误标成交通事故。
+EXCLUSIVE_HINTS: list[str] = ["反垄断", "垄断", "不正当竞争", "植物新品种"]
+
 CASE_TYPE_RULES: list[tuple[str, list[str]]] = [
-    ("交通事故人身损害赔偿", ["交通事故", "机动车", "交强险", "人身损害"]),
+    # 「机动车」「人身损害」这类泛词不能作为交通事故的判定依据：
+    # 只有真正的事故特征词才算（案例正文里出现「机动车检测」≠ 交通事故）
+    ("交通事故人身损害赔偿", ["交通事故", "交强险", "车祸", "道路交通事故"]),
     ("消费维权", ["消费者", "欺诈", "退一赔三", "商品", "惩罚性赔偿"]),
     ("劳动争议", ["劳动", "工资", "竞业限制", "加班", "经济补偿", "工伤"]),
     ("知识产权", ["专利", "商标", "著作权", "知识产权", "商业秘密"]),
@@ -133,6 +139,8 @@ def split_sections(text: str) -> dict[str, str]:
 
 
 def guess_case_type(text: str) -> str:
+    if any(hint in text for hint in EXCLUSIVE_HINTS):
+        return "其他民事纠纷"
     for case_type, keywords in CASE_TYPE_RULES:
         if any(keyword in text for keyword in keywords):
             return case_type

@@ -15,13 +15,15 @@ DATA = Path(__file__).resolve().parent.parent / "data"
 OFFICIAL = DATA / "cases.official.json"
 
 
-def official_case(case_id: str, dispute: str, holding: str) -> CaseRecord:
+def official_case(
+    case_id: str, dispute: str, holding: str, case_type: str = "消费维权"
+) -> CaseRecord:
     return CaseRecord(
         case_id=case_id,
         court="最高人民法院",
         year=2026,
         region="全国",
-        case_type="消费维权",
+        case_type=case_type,
         dispute=dispute,
         holding=holding,
         amounts={},
@@ -41,6 +43,25 @@ class OfficialCaseStoreTest(unittest.TestCase):
         hits = store.search_official(["欺诈", "惩罚性赔偿"], case_type="消费维权")
         self.assertEqual(len(hits), 1)
         self.assertEqual(hits[0].case_id, "指导性案例264号")
+
+    def test_cross_case_type_is_never_referenced(self):
+        """案由不符一律不引用：关键词命中也不行。
+
+        回归背景：关键词「机动车」曾把「机动车检测公司垄断纠纷」
+        拉进交通事故报告的真实案例参照，对专业性直接失分。
+        """
+
+        monopoly = official_case(
+            "反垄断典型案例·案例三",
+            "机动车检测公司垄断纠纷",
+            "民事案件审理中应注意识别垄断问题",
+            case_type="商业垄断",
+        )
+        store = CaseStore([], [monopoly])
+        hits = store.search_official(
+            ["机动车", "交通事故", "赔偿"], case_type="交通事故人身损害赔偿"
+        )
+        self.assertEqual(hits, [])
 
     def test_no_match_returns_empty_instead_of_guessing(self):
         store = CaseStore([], [official_case("指导性案例264号", "网络购物欺诈案", "构成欺诈")])
@@ -79,6 +100,41 @@ class OfficialCaseStoreTest(unittest.TestCase):
         self.assertEqual(len(store.official), 1)
 
 
+class CacheQualityTest(unittest.TestCase):
+    def test_no_traffic_mislabeled_records(self):
+        """缓存里不允许存在「挂着交通事故案由、内容却与事故无关」的记录。
+
+        回归背景：反垄断案例因正文含「机动车检测」曾被误标为交通事故，
+        出现在交通事故报告的真实案例参照里，对专业性直接失分。
+        """
+
+        import json
+
+        records = json.loads(OFFICIAL.read_text(encoding="utf-8"))
+        traffic = [item for item in records if item.get("case_type") == "交通事故人身损害赔偿"]
+        for item in traffic:
+            text = "".join(
+                str(item.get(key) or "") for key in ("title", "dispute", "holding")
+            ) + "".join(item.get("keywords") or [])
+            self.assertTrue(
+                any(k in text for k in ["交通事故", "交强险", "车祸", "道路交通事故"]),
+                f"疑似误标：{item.get('case_id')}",
+            )
+
+    def test_guess_case_type_antitrust_is_not_traffic(self):
+        import sys
+
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        from tools.fetch_cases import guess_case_type
+
+        self.assertEqual(
+            guess_case_type("机动车检测公司垄断纠纷 反垄断典型案例"), "其他民事纠纷"
+        )
+        self.assertEqual(
+            guess_case_type("机动车交通事故责任纠纷 交强险赔付"), "交通事故人身损害赔偿"
+        )
+
+
 class OfficialCaseWiringTest(unittest.TestCase):
     def build(self, store: CaseStore):
         orchestrator = Orchestrator(
@@ -99,7 +155,14 @@ class OfficialCaseWiringTest(unittest.TestCase):
     def test_hits_are_streamed_and_reported(self):
         store = CaseStore(
             [],
-            [official_case("指导性案例264号", "交通事故赔偿纠纷", "按责任比例认定损失")],
+            [
+                official_case(
+                    "指导性案例264号",
+                    "交通事故赔偿纠纷",
+                    "按责任比例认定损失",
+                    case_type="交通事故人身损害赔偿",
+                )
+            ],
         )
         record, events = self.build(store)
         hits = [event for event in events if event.payload.get("scope") == "case_official"]
