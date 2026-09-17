@@ -17,6 +17,7 @@
 | [BACKEND_STRUCTURE.md](./BACKEND_STRUCTURE.md) | 后端怎么分层、数据怎么流动 | 高 |
 | [CLAUDE.md](./CLAUDE.md) | 编码 Agent 在本仓库应该怎么干活 | 高 |
 | [PROGRESS.md](./PROGRESS.md) | 当前做到哪、下一步是什么 | 低，持续更新 |
+| [实证案例录入指南.md](./实证案例录入指南.md) | 怎么把真实判决录成 🟢 实证类案（线索来源与核验铁律） | 高 |
 
 ## 使用约定
 
