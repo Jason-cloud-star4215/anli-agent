@@ -24,6 +24,9 @@ from .evidence_chain import (
 )
 from .item_assessment import STATUS_LABEL
 from .feasibility import build_assessment
+from .cross_exam import build_challenges, render_challenges
+from .judgment import render_judgment
+from .standards import StandardsStore
 from .models import (
     Artifact,
     CaseProfile,
@@ -66,9 +69,11 @@ class Orchestrator:
         llm=None,
         law_checker=None,
         llm_configured: bool | None = None,
+        standards_store: StandardsStore | None = None,
     ) -> None:
         self.law_store = law_store
         self.case_store = case_store
+        self.standards = standards_store or StandardsStore()
         self.registry = build_default_registry(law_store, case_store, law_checker)
         self.router = ToolRouter(self.registry)
         self.verifier = CitationVerifier(law_store, case_store)
@@ -804,6 +809,17 @@ class Orchestrator:
             Artifact(kind="stance", title=stance_title, body=stance_body)
         )
 
+        # 结构化质证：逐条落到「项目+证据+异议类型+金额+成立后果」，按身份给不同打法
+        challenges = build_challenges(profile)
+        record.extra["challenges"] = [item.to_dict() for item in challenges]
+        artifacts.append(
+            Artifact(
+                kind="cross_exam",
+                title="质证争点清单",
+                body=render_challenges(challenges, record.role),
+            )
+        )
+
         artifacts.append(
             Artifact(
                 kind="analysis",
@@ -1000,6 +1016,12 @@ class Orchestrator:
                     calc_lines.append(f"   标准：{item.standard}")
                 if item.missing_params:
                     calc_lines.append(f"   还缺参数：{'、'.join(item.missing_params)}")
+                    # 缺的参数凡是有官方标准的，直接给出真实数字与出处；
+                    # 查不到标准（或地区不在表内）就维持原样，不硬凑数字
+                    for param in item.missing_params:
+                        standard_desc = self.standards.describe_param(param, region=profile.region)
+                        if standard_desc:
+                            calc_lines.append(f"   标准参考：{standard_desc}")
                 if item.note:
                     calc_lines.append(f"   提示：{item.note}")
             counted = sum(item.counted for item in findings_list if item.status == "supported")
@@ -1090,17 +1112,17 @@ class Orchestrator:
             )
         )
 
+        # 模拟判决书：金额只取评估结果，类案只引真实来源案例；无类案时如实声明
+        real_citations = [
+            c
+            for c in verified
+            if c.source_type == "case" and c.grade == "authoritative"
+        ]
         artifacts.append(
             Artifact(
                 kind="document",
-                title="文书草稿",
-                body="\n".join(
-                    [
-                        "（草稿，需人工复核后使用）",
-                        f"请求事项：请求被申请人赔偿 {assessment.legal_cap:.0f} 元" if assessment else "",
-                        "事实与理由：见案件分析报告与证据清单。",
-                    ]
-                ),
+                title="模拟判决书（草稿，仅供学习参考）",
+                body=render_judgment(profile, assessment, real_citations),
             )
         )
         return artifacts

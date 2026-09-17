@@ -28,6 +28,9 @@ from .llm import LLMClient, candidate_env_files
 from .llm_intake import build_profile_llm
 from .models import Role, TaskState
 from .orchestrator import Orchestrator
+from .standards import StandardsStore
+from .exporter import build_markdown_export
+from urllib.parse import quote as _urlquote
 from .paths import resource_path, user_root
 from .retrieval_flk import LawSourceChecker
 from .regions import DEFAULT_REGION, REGIONS, normalize_region
@@ -172,6 +175,7 @@ def _build_orchestrator(
         llm=llm,
         law_checker=checker,
         llm_configured=llm_configured,
+        standards_store=StandardsStore.load(DATA / "standards.json"),
     )
     orchestrator.subscribe(on_event)
     return orchestrator
@@ -489,6 +493,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"code": 0, "default": DEFAULT_REGION, "regions": REGIONS})
         elif path.startswith("/api/tasks/") and path.endswith("/stream"):
             self._stream(path.split("/")[3])
+        elif path.startswith("/api/tasks/") and path.endswith("/export"):
+            self._export_md(path.split("/")[3])
         elif path.startswith("/api/tasks/"):
             self._task(path.split("/")[3])
         else:
@@ -705,6 +711,27 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.flush()
             except (BrokenPipeError, ConnectionResetError):
                 return
+
+    def _export_md(self, task_id: str) -> None:
+        """导出整份分析报告为 Markdown 附件，可直接打印或发送。"""
+
+        task = TASKS.get(task_id)
+        record = (task or {}).get("record")
+        if record is None:
+            self._json({"code": 404, "msg": "任务不存在或尚未完成"}, status=404)
+            return
+        markdown = build_markdown_export(record, task_id)
+        body = markdown.encode("utf-8")
+        filename = _urlquote(f"案理法律分析报告-{task_id}.md")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/markdown; charset=utf-8")
+        self.send_header(
+            "Content-Disposition",
+            f"attachment; filename=report-{task_id}.md; filename*=UTF-8''{filename}",
+        )
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def _task(self, task_id: str) -> None:
         if not TASK_ID_PATTERN.match(task_id or ""):

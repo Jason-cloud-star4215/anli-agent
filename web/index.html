@@ -420,7 +420,12 @@
       </div>
 
       <div class="card d-none" id="reportCard">
-        <div class="card-header">完整报告</div>
+        <div class="card-header d-flex align-items-center">
+          <span>完整报告</span>
+          <button type="button" class="btn btn-outline-primary btn-sm ms-auto" id="exportBtn">
+            导出报告 (.md)
+          </button>
+        </div>
         <div class="card-body"><div id="report"></div></div>
       </div>
     </div>
@@ -724,7 +729,8 @@
     analysis: "案件分析", feasibility: "诉求可行性", evidence: "证据清单",
     research: "法条与类案", risk: "风险与漏洞", actions: "维权路径对照",
     calculation: "金额计算说明", revision: "修订说明",
-    document: "文书草稿", need_info: "补充信息提示",
+    calculation: "金额计算说明", cross_exam: "质证争点清单",
+    document: "模拟判决书", need_info: "补充信息提示",
     out_of_scope: "超出覆盖范围提示", human_review: "转人工提示"
   };
   var GRADE_LABEL = {
@@ -2116,6 +2122,11 @@
   $("sampleCriminal").addEventListener("click", function () { fillSample("criminal"); });
   $("sampleBigRisk").addEventListener("click", function () { fillSample("bigrisk"); });
   $("templateBtn").addEventListener("click", insertTemplate);
+  $("exportBtn").addEventListener("click", function () {
+    if (!currentTask) { return; }
+    addLog("导出报告", "正在生成交付物包（Markdown，可直接打印/发送）…", "muted");
+    window.open("/api/tasks/" + currentTask + "/export", "_blank");
+  });
   $("run").addEventListener("click", start);
   $("continue").addEventListener("click", continueAnalysis);
   $("waive").addEventListener("click", waiveAndContinue);
