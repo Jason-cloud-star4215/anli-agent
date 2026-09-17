@@ -335,7 +335,7 @@ class Orchestrator:
             )
             if requests:
                 summary += (
-                    f"\n\n提醒：以上是初步结论。你的证据链还缺 {len(requests)} 项，"
+                    f"\n\n提醒：以上是初步结论。还有 {len(requests)} 项待补充（缺金额或材料），"
                     "补齐后金额判断会更准，详见下一节。"
                 )
             record.extra["strategies"] = strategies

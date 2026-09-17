@@ -143,7 +143,9 @@ def build_assessment(
             "证据补齐前系统不给结论性的赔付数字"
         )
     if expectation > cap:
-        reasons.append(f"{expectation_label}超过按现有证据计算的法定上限 {_round(cap)} 元")
+        reasons.append(
+            f"{expectation_label}超过按现有证据计算的法定上限 {_round(cap):,.0f} 元"
+        )
 
     return FeasibilityAssessment(
         expectation=round(expectation, 2),

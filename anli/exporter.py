@@ -51,6 +51,14 @@ def _tier_label(tier: str) -> str:
     }.get(tier, "未标注")
 
 
+def _tier_label_for(assessment, tier: str) -> str:
+    """量级闸门拒答时，把数据等级说清楚：有样本但不可用 ≠ 一个样本都没有。"""
+
+    if assessment is not None and getattr(assessment, "magnitude_mismatch", False):
+        return "🔴 无可用类案样本（现有样本与本案损失量级不匹配）"
+    return _tier_label(tier)
+
+
 def export_model_from_record(record: TaskRecord, task_id: str) -> dict:
     """从完整任务记录构建文档模型。"""
 
@@ -80,7 +88,7 @@ def export_model_from_record(record: TaskRecord, task_id: str) -> dict:
                 "案情理解方式",
                 f"{'大模型抽取 + 规则校验' if intake == 'llm' else '规则引擎'}（模型参与 {llm_calls} 次）",
             ),
-            ("类案数据等级", _tier_label(tier)),
+            ("类案数据等级", _tier_label_for(assessment, tier)),
         ],
         "sections": [(a.title, a.body) for a in record.artifacts],
         "footer": list(FOOTER),
