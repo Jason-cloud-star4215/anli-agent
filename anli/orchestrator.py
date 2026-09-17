@@ -865,7 +865,7 @@ class Orchestrator:
 
         if assessment is None:  # pragma: no cover - 防御性分支
             artifacts.append(
-                Artifact(kind="feasibility", title="四、诉求可行性评估", body="评估未生成")
+                Artifact(kind="feasibility", title="诉求可行性评估", body="评估未生成")
             )
         else:
             labels = {

@@ -681,8 +681,16 @@ class Handler(BaseHTTPRequestHandler):
         names: list[str] = []
         total = 0
         for item in files:
-            name = str(item.get("name") or "材料")
-            data = item.get("data") or ""
+            # 客户端可以只报名单（字符串），也可以带内容（{name, data}）；
+            # 字符串以外的非字典写法按「只有文件名」处理，不能让它把请求打崩
+            if isinstance(item, dict):
+                name = str(item.get("name") or "材料")
+                data = item.get("data") or ""
+            else:
+                name, data = str(item or "材料"), ""
+            if not data:
+                names.append(name)
+                continue
             try:
                 raw = base64.b64decode(data, validate=False)
             except Exception:  # noqa: BLE001

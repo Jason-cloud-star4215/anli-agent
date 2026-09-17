@@ -40,7 +40,9 @@ class RegionAssessmentTest(unittest.TestCase):
         self.assertEqual(assessment.region_sample_size, 3)
         self.assertEqual(assessment.cross_region_sample_size, 0)
         self.assertEqual(assessment.case_high, 7000)  # 外省 99000 不能进来
-        self.assertIn("本地区（浙江省）3 件", assessment.sample_note)
+        self.assertIn("浙江省本地 3 件", assessment.sample_note)
+        # 括号里再套括号会读起来别扭（样本 0 件（本地区（浙江省）0 件）），这里锁死格式
+        self.assertNotIn("（本地区（", assessment.sample_note)
 
     def test_falls_back_and_says_so_when_local_samples_are_few(self):
         """本地区样本不足时可以用外省样本，但必须在结论里说明。"""

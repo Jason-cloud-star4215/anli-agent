@@ -210,7 +210,7 @@ class FeasibilityAssessment:
 
         parts: list[str] = []
         if self.region:
-            parts.append(f"本地区（{self.region}）{self.region_sample_size} 件")
+            parts.append(f"{self.region}本地 {self.region_sample_size} 件")
         if self.cross_region_sample_size:
             parts.append(f"其他省份 {self.cross_region_sample_size} 件")
         if self.synthetic_sample_size:
