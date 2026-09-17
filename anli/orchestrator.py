@@ -1085,7 +1085,9 @@ class Orchestrator:
             calc_lines += [
                 "",
                 f"合计可认定：约 {counted:.0f} 元",
-                f"再乘以责任比例 {profile.responsibility_ratio:.0%}，得到可支持金额（约数）。",
+                f"再乘以责任比例 {profile.responsibility_ratio:.0%}，可支持金额约为 "
+                f"{counted * profile.responsibility_ratio:,.0f} 元"
+                "（与「诉求可行性评估」一节完全一致，可自行复算核对）。",
                 "",
                 "计算方式说明：",
                 "· 按逐项认定逻辑计算，有凭证的按凭证金额认定，不因证据不足而给主张金额打折；",
