@@ -108,7 +108,12 @@ class CaseStore:
         self.official = official or []
 
     @classmethod
-    def load(cls, path: str | Path, official_path: str | Path | None = None) -> "CaseStore":
+    def load(
+        cls,
+        path: str | Path,
+        official_path: str | Path | None = None,
+        empirical_path: str | Path | None = None,
+    ) -> "CaseStore":
         raw = json.loads(Path(path).read_text(encoding="utf-8"))
         official: list[CaseRecord] = []
         if official_path is not None and Path(official_path).exists():
@@ -119,7 +124,19 @@ class CaseStore:
                 official = [case_from_dict(item) for item in official_raw]
             except (OSError, ValueError, TypeError):
                 official = []
-        return cls([case_from_dict(item) for item in raw], official)
+        cases = [case_from_dict(item) for item in raw]
+        # 实证层：人工对照判决原文核验过的真实案例（带金额），优先级最高；
+        # 只有 verification="human_verified" 的记录才允许进入
+        if empirical_path is not None and Path(empirical_path).exists():
+            try:
+                from .real_cases import RealCaseStore
+
+                empirical = RealCaseStore.load(empirical_path)
+                for record in empirical.verified():
+                    cases.append(record.to_case_record())
+            except (OSError, ValueError):
+                pass
+        return cls(cases, official)
 
     def search_official(
         self,
@@ -205,7 +222,11 @@ class CaseStore:
             key=lambda case: (similarity(case), case.region == region, case.year),
             reverse=True,
         )
-        return scored[:limit]
+        # 实证案例（人工核验、非演示）永远排在演示样本前面；
+        # 实证不足时才由演示样本补位，保证区间优先反映真实判例
+        empirical = [case for case in scored if not case.synthetic]
+        demo = [case for case in scored if case.synthetic]
+        return (empirical + demo)[:limit]
 
 
 class CitationVerifier:

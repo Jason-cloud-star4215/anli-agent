@@ -218,6 +218,11 @@ class Orchestrator:
                 evidence=profile.available_evidence,
                 region=profile.region,
             )
+            # 实证充足（同案由人工核验 ≥3 件）时，区间只用实证案例，演示样本不掺入；
+            # 不足时保留演示样本并强制标注 🟡，绝不冒充真实判例
+            empirical_cases = [c for c in cases if not c.synthetic and c.total_amount > 0]
+            if len(empirical_cases) >= 3:
+                cases = empirical_cases
             findings, redteam = self._run_critique(
                 context, record, cases, legal_cap
             )
@@ -868,6 +873,19 @@ class Orchestrator:
                 if assessment.provisional
                 else f"结论状态：证据充分度 {assessment.sufficiency:.0%}，可给出结论性估算"
             )
+            # 实证感知：非演示样本即人工核验的实证类案，亮 🟢；纯演示时维持原警告
+            real_sample = assessment.sample_size - assessment.synthetic_sample_size
+            if assessment.has_synthetic:
+                nature_line = (
+                    "样本性质：含演示数据，仅用于演示检索与计算流程，不是真实裁判结果"
+                    + (f"（其中真实来源 {real_sample} 件）" if real_sample else "")
+                )
+            elif real_sample:
+                nature_line = (
+                    f"样本性质：🟢 实证类案 {real_sample} 件（人工核验，附来源链接）"
+                )
+            else:
+                nature_line = "样本性质：真实来源案例"
             likely_text = approx_range(assessment.likely_low, assessment.likely_high)
             if assessment.provisional:
                 cap_line = (
@@ -889,11 +907,7 @@ class Orchestrator:
                             f"（中位数 {_fmt(assessment.case_median)} 元，样本 {assessment.sample_size} 件）",
                             region_line,
                             "样本构成：" + assessment.sample_note,
-                            (
-                                "样本性质：含演示数据，仅用于演示检索与计算流程，不是真实裁判结果"
-                                if assessment.has_synthetic
-                                else "样本性质：真实来源案例"
-                            ),
+                            nature_line,
                             likely_line,
                             f"结论：{labels[0]}{feasible}",
                             gate_line,

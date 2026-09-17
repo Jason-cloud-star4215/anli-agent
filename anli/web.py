@@ -169,7 +169,9 @@ def _build_orchestrator(
     orchestrator = Orchestrator(
         law_store=LawStore.load(DATA / "laws.seed.json"),
         case_store=CaseStore.load(
-            DATA / "cases.seed.json", DATA / "cases.official.json"
+            DATA / "cases.seed.json",
+            DATA / "cases.official.json",
+            DATA / "real_cases.json",
         ),
         state_store=StateStore(ROOT / "state"),
         llm=llm,

@@ -95,6 +95,7 @@ class RealCase:
             evidence_points=list(self.key_evidence_tags),
             source_url=self.source_url,
             synthetic=False,
+            source_name="实证类案（人工核验）",
         )
 
 
