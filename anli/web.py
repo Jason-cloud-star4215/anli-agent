@@ -124,6 +124,8 @@ def build_view(record, report: str = "", error: str = "") -> dict:
         "llm_status_text": record.extra.get("llm_status_text", "") if record else "",
         "llm_calls": record.extra.get("llm_calls", 0) if record else 0,
         "llm_failures": record.extra.get("llm_failures", 0) if record else 0,
+        "llm_retries": record.extra.get("llm_retries", 0) if record else 0,
+        "llm_last_failure": record.extra.get("llm_last_failure", "") if record else "",
         "report": report,
         "findings": [asdict(item) for item in record.findings] if record else [],
         "citations": [asdict(item) for item in record.citations] if record else [],
@@ -233,7 +235,8 @@ def health_payload() -> dict:
 
 
 def llm_status_for(
-    llm_configured: bool, calls: int, failures: int, stopped_early: bool
+    llm_configured: bool, calls: int, failures: int, stopped_early: bool,
+    last_failure: str = "",
 ) -> tuple[str, str]:
     """判定一次任务的模型使用状态，返回 (status, 说明文字)。
 
@@ -251,12 +254,14 @@ def llm_status_for(
     if not llm_configured:
         return "offline", "未连接大模型（未配置密钥或已用 ANLI_DISABLE_LLM=1 关闭），本次为规则版分析"
     if failures:
-        return (
-            "degraded",
+        text = (
             f"大模型有 {failures} 次调用失败，相关环节已退回规则版；其余 {calls} 次调用正常"
             if calls
-            else "大模型调用全部失败，已自动退回规则版分析；请检查密钥、网络或模型名",
+            else "大模型调用全部失败，已自动退回规则版分析；请检查密钥、网络或模型名"
         )
+        if last_failure:
+            text += f"。最近失败原因：{last_failure}"
+        return "degraded", text
     if calls == 0:
         return (
             "skipped",
@@ -359,6 +364,7 @@ def _run_task(
             llm_configured=bool(record.extra.get("llm_configured", llm is not None)),
             calls=calls,
             failures=failures,
+            last_failure=str(record.extra.get("llm_last_failure") or ""),
             stopped_early=bool(record.extra.get("out_of_scope"))
             or record.state == TaskState.NEEDS_HUMAN,
         )

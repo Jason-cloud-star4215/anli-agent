@@ -347,6 +347,12 @@ class Orchestrator:
             record.extra["llm_failures"] = (
                 getattr(self.llm, "failures", 0) if self.llm else 0
             )
+            record.extra["llm_retries"] = (
+                getattr(self.llm, "retries", 0) if self.llm else 0
+            )
+            record.extra["llm_last_failure"] = (
+                getattr(self.llm, "last_failure", "") if self.llm else ""
+            )
             record.extra["intake_source"] = profile.intake_source
 
             record.artifacts = self._build_artifacts(
@@ -664,6 +670,10 @@ class Orchestrator:
 
         record.extra["llm_calls"] = getattr(self.llm, "calls", 0) if self.llm else 0
         record.extra["llm_failures"] = getattr(self.llm, "failures", 0) if self.llm else 0
+        record.extra["llm_retries"] = getattr(self.llm, "retries", 0) if self.llm else 0
+        record.extra["llm_last_failure"] = (
+            getattr(self.llm, "last_failure", "") if self.llm else ""
+        )
         record.extra["llm_configured"] = self.llm_configured
 
     def _emit_llm_state_on_stop(self, task_id: str, reason: str) -> None:
