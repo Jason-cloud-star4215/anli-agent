@@ -1,9 +1,11 @@
 """任务恢复：检查点里要存一份前端视图，重启服务后还能取回上次结果。"""
 
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import anli.web as web
 from anli.models import Role
@@ -136,20 +138,25 @@ class LlmStatusTest(unittest.TestCase):
         self.assertIn("调用 8 次", text)
 
     def test_health_prefers_last_run_result(self):
-        """最近一次真实运行失败后，健康检查不能还报「已连接」。"""
+        """最近一次真实运行失败后，健康检查不能还报「已连接」。
+
+        这里显式注入一个假的密钥：否则本测试会随「本机有没有 .env」而变绿变红，
+        交付包剥离密钥后就会莫名其妙失败。
+        """
 
         original = dict(web.LAST_LLM_RUN)
-        try:
-            web.LAST_LLM_RUN.clear()
-            web.LAST_LLM_RUN.update({"status": "degraded", "text": "调用失败"})
-            payload = web.health_payload()
-            self.assertEqual(payload["status"], "degraded")
-            self.assertTrue(payload["configured"])
-            web.LAST_LLM_RUN.update({"status": "skipped", "text": "提前结束"})
-            self.assertEqual(web.health_payload()["status"], "skipped")
-        finally:
-            web.LAST_LLM_RUN.clear()
-            web.LAST_LLM_RUN.update(original)
+        with mock.patch.dict(os.environ, {"ANLI_LLM_API_KEY": "test-key-for-health"}):
+            try:
+                web.LAST_LLM_RUN.clear()
+                web.LAST_LLM_RUN.update({"status": "degraded", "text": "调用失败"})
+                payload = web.health_payload()
+                self.assertEqual(payload["status"], "degraded")
+                self.assertTrue(payload["configured"])
+                web.LAST_LLM_RUN.update({"status": "skipped", "text": "提前结束"})
+                self.assertEqual(web.health_payload()["status"], "skipped")
+            finally:
+                web.LAST_LLM_RUN.clear()
+                web.LAST_LLM_RUN.update(original)
 
 
 class PlanIntakeTest(unittest.TestCase):

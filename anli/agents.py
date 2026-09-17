@@ -176,7 +176,11 @@ class ResearcherAgent(BaseAgent):
 
     def act(self, context: AgentContext) -> AgentResult:
         profile = context.profile
-        keywords = [profile.cause] + profile.disputed_points[:3]
+        # 检索词由编排层的 planner 决策（模型参与 + 白名单校验）；
+        # 没拿到决策时退回规则词，行为与以前一致
+        keywords = list(context.extra.get("research_keywords") or []) or (
+            [profile.cause] + profile.disputed_points[:3]
+        )
         self.bus.emit("retrieval_started", context.task_id, {"agent": self.role.value})
         for keyword in keywords[:2]:
             self.bus.emit(

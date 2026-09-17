@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 
+from .materials import cross_check_amounts, evidence_from_materials, summarize
 from .models import CaseProfile
 from .item_assessment import assess_items, sufficiency
 
@@ -262,6 +263,7 @@ def build_profile(
     waived_evidence: list[str] | None = None,
     quality_answers: dict[str, list[str]] | None = None,
     waive_all: bool = False,
+    material_facts: list | None = None,
 ) -> CaseProfile:
     """把用户原话与上传材料转成结构化案情。"""
 
@@ -272,7 +274,9 @@ def build_profile(
     evidence_from_files = infer_evidence_from_filenames(file_names)
     # 用户明确勾选「我已有这份材料」的，直接按有材料处理，不依赖文件名识别
     confirmed = {name for name in (confirmed_evidence or []) if name in EVIDENCE_VOCAB}
-    strong = strong_text | evidence_from_files | confirmed
+    # 上传材料的**正文**里读到的证据线索（以前只用文件名，正文从未被打开）
+    material_tags = evidence_from_materials(material_facts or [])
+    strong = strong_text | evidence_from_files | confirmed | material_tags
     weak = weak_text - strong
     evidence = strong | weak
 
@@ -288,7 +292,14 @@ def build_profile(
 
     sources: dict[str, str] = {}
     for item in sorted(evidence):
-        if item in evidence_from_files and item in (strong_text | weak_text):
+        if item in material_tags:
+            # 正文里读到的比文件名可信，说明用户到底交了哪份材料
+            sources[item] = (
+                "描述提及 + 材料正文中读到"
+                if item in (strong_text | weak_text)
+                else "材料正文中读到（已上传）"
+            )
+        elif item in evidence_from_files and item in (strong_text | weak_text):
             sources[item] = "描述提及 + 已上传"
         elif item in evidence_from_files:
             sources[item] = "已上传"
@@ -302,6 +313,17 @@ def build_profile(
     required = sorted({need for rule in CLAIM_RULES.get(cause, {}).values() for need in rule["required"]})
     missing = [item for item in required if item not in evidence]
 
+    # 材料解析结果要说给人听：读到了几份、哪几份读不到、金额对不上在哪
+    material_summary = summarize(material_facts or [])
+    material_notes: list[str] = []
+    if material_facts:
+        if material_summary["total"]:
+            material_notes.append(material_summary["text"])
+        material_notes += cross_check_amounts(material_facts, amounts)
+        material_notes += [
+            f"{item.name}：{item.reason}" for item in material_facts if not item.parsed
+        ]
+
     return CaseProfile(
         summary=text[:60] or "用户未提供案情描述",
         cause=cause,
@@ -313,7 +335,7 @@ def build_profile(
         available_evidence=sorted(evidence),
         missing_evidence=missing,
         evidence_sources=sources,
-        evidence_notes=notes,
+        evidence_notes=notes + material_notes,
         extra={
             "unquantified_items": unquantified,
             "waived_evidence": sorted(
@@ -321,6 +343,9 @@ def build_profile(
             ),
             "quality_answers": dict(quality_answers or {}),
             "sufficiency": sufficiency(item_findings),
+            # 材料正文解析结果（含未解析原因）：补交轮次直接复用，不重复解析
+            "material_facts": [item.to_dict() for item in (material_facts or [])],
+            "material_summary": material_summary,
             # 该案由是否适用责任比例（消费维权、劳动争议不适用）
             "responsibility_applies": responsibility_applies(cause),
             # 用户明确表示「材料拿不出来，就按现有情况给结论」：

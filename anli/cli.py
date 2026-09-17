@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from dataclasses import asdict
 from pathlib import Path
 
@@ -132,6 +133,23 @@ def cmd_ask(args: argparse.Namespace) -> int:
     return 0 if record.state.value in {"DELIVERED", "NEEDS_EVIDENCE", "NEEDS_INFO"} else 1
 
 
+def _make_console_safe() -> None:
+    """让控制台不会因为报告里的 emoji 直接崩掉。
+
+    Windows 控制台默认编码是 GBK，而类案数据等级用了 🟢🟡🔴：
+    `print(report)` 会抛 `UnicodeEncodeError: 'gbk' codec can't encode character`。
+    这里只把编解码错误降级为替换字符，**不改变编码本身**——
+    中文在 GBK 控制台下本来就是正常的，只有 emoji 会显示成 `?`，
+    总好过整条命令直接失败。Linux / macOS 通常已是 UTF-8，无需处理。
+    """
+
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")  # type: ignore[union-attr]
+        except (AttributeError, ValueError, OSError):  # pragma: no cover - 老版本或特殊流
+            pass
+
+
 def _write_out(path: str | None, text: str) -> None:
     if not path:
         return
@@ -142,6 +160,7 @@ def _write_out(path: str | None, text: str) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    _make_console_safe()
     parser = argparse.ArgumentParser(prog="anli", description="案理 · 最小可用骨架")
     sub = parser.add_subparsers(dest="command", required=True)
 

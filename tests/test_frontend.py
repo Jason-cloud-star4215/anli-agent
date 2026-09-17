@@ -259,5 +259,34 @@ class FrontendTest(unittest.TestCase):
             self.assertIn(label, self.html, label)
 
 
+    def test_material_parse_panel(self):
+        """材料解析结果要看得见：已解析 / 未解析徽章、未解析原因、对外发送脱敏说明。"""
+
+        for element in ["materialList"]:
+            self.assertIn(f'id="{element}"', self.html)
+        for token in [
+            "renderMaterials",
+            "上传材料解析",
+            "已解析",
+            "未解析",
+            "data.materials",
+            "item.reason",
+            "redaction_note",
+        ]:
+            self.assertIn(token, self.html, token)
+
+    def test_material_panel_keeps_card_visible_without_findings(self):
+        """只上传了材料、还没识别出损失项目时，证据卡不能整块藏起来。"""
+
+        self.assertIn("!materials.length", self.html)
+
+    def test_plan_decided_is_rendered_in_stream(self):
+        """规划决策要在过程流里看得出来：哪一步是模型定的、哪一步是规则兜的。"""
+
+        self.assertIn("plan_decided", self.html)
+        for token in ["检索规划", "轮次判定", "路径排序", "模型决策", "规则决策"]:
+            self.assertIn(token, self.html, token)
+
+
 if __name__ == "__main__":
     unittest.main()

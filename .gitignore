@@ -11,6 +11,12 @@ build/
 dist/
 *.spec
 
+# 运行期数据：判决书提取草稿、成本单价等本机配置
+data/draft_从文书提取.json
+data/pricing.json
+uploads/
+*.log
+
 # Python
 __pycache__/
 *.py[cod]

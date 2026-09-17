@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+import os
+
 from .intake import (
     CAUSE_KEYWORDS,
     CLAIM_RULES,
@@ -24,7 +26,12 @@ from .intake import (
     parse_responsibility,
 )
 from .item_assessment import assess_items, sufficiency
+from .materials import cross_check_amounts, evidence_from_materials, summarize
 from .models import CaseProfile
+from .redact import describe, redact_with_counts
+
+# 发送未脱敏原文的开关：默认关闭，必须由用户显式打开
+RAW_TEXT_ENV = "ANLI_SEND_RAW_TEXT"
 
 SYSTEM_PROMPT = """你是法律案情抽取助手，把用户的口语描述整理成结构化 JSON。
 只输出 JSON，不要任何解释文字。
@@ -84,6 +91,7 @@ def profile_from_payload(
     waived_evidence: list[str] | None = None,
     quality_answers: dict[str, list[str]] | None = None,
     waive_all: bool = False,
+    material_facts: list | None = None,
 ) -> CaseProfile:
     """把模型输出落回受控结构；越界字段直接丢弃。"""
 
@@ -124,6 +132,9 @@ def profile_from_payload(
     weak |= weak_text - strong
     confirmed = {name for name in (confirmed_evidence or []) if name in EVIDENCE_VOCAB}
     strong |= confirmed
+    # 上传材料的正文里读到的证据线索（以前只有文件名参与识别）
+    material_tags = evidence_from_materials(material_facts or [])
+    strong |= material_tags
 
     item_findings = assess_items(cause, amounts, strong, weak, quality_answers)
     supported, blocked, partial, notes = findings_to_profile_parts(cause, item_findings)
@@ -160,6 +171,16 @@ def profile_from_payload(
     timeline = [str(item) for item in (payload.get("timeline") or [])][:10]
     disputed = [str(item) for item in (payload.get("disputed_points") or [])][:6]
 
+    material_summary = summarize(material_facts or [])
+    material_notes: list[str] = []
+    if material_facts:
+        if material_summary["total"]:
+            material_notes.append(material_summary["text"])
+        material_notes += cross_check_amounts(material_facts, amounts)
+        material_notes += [
+            f"{item.name}：{item.reason}" for item in material_facts if not item.parsed
+        ]
+
     return CaseProfile(
         summary=str(payload.get("summary") or description[:60]),
         cause=cause,
@@ -178,10 +199,14 @@ def profile_from_payload(
             if need not in strong | weak
         ],
         evidence_sources={
-            item: ("已上传或有材料" if item in strong else "仅口头提及")
+            item: (
+                "材料正文中读到"
+                if item in material_tags
+                else ("已上传或有材料" if item in strong else "仅口头提及")
+            )
             for item in sorted(strong | weak)
         },
-        evidence_notes=notes,
+        evidence_notes=notes + material_notes,
         claim_items=supported,
         blocked_items=blocked,
         partial_items=partial,
@@ -209,8 +234,14 @@ def build_profile_llm(
     waived_evidence: list[str] | None = None,
     quality_answers: dict[str, list[str]] | None = None,
     waive_all: bool = False,
+    material_facts: list | None = None,
 ) -> CaseProfile:
-    """优先用大模型理解案情，失败则退回规则抽取。"""
+    """优先用大模型理解案情，失败则退回规则抽取。
+
+    对外发送前**一律先脱敏**：案情描述里常有手机号、身份证、详细住址，
+    这些没有理由离开本机。用户显式设置 `ANLI_SEND_RAW_TEXT=1` 才发送原文。
+    规则版是本机计算，不需要脱敏，因此仍用用户原话。
+    """
 
     file_names = file_names or []
     if llm is None or not getattr(llm, "available", False):
@@ -222,11 +253,16 @@ def build_profile_llm(
             waived_evidence,
             quality_answers,
             waive_all=waive_all,
+            material_facts=material_facts,
         )
+
+    send_raw = os.environ.get(RAW_TEXT_ENV) == "1"
+    payload_text, redactions = (description, {}) if send_raw else redact_with_counts(description)
     try:
-        payload = llm.chat_json(_system_prompt(), build_prompt(description, file_names))
-        return profile_from_payload(
+        payload = llm.chat_json(_system_prompt(), build_prompt(payload_text, file_names))
+        profile = profile_from_payload(
             payload,
+            # 报告里保留用户原话（本地产物）；对外发送的只是脱敏版
             description,
             file_names,
             region,
@@ -234,9 +270,10 @@ def build_profile_llm(
             waived_evidence,
             quality_answers,
             waive_all=waive_all,
+            material_facts=material_facts,
         )
     except Exception:  # noqa: BLE001 - 模型不可用时不能拖垮主流程
-        return build_profile(
+        profile = build_profile(
             description,
             file_names,
             region,
@@ -244,4 +281,12 @@ def build_profile_llm(
             waived_evidence,
             quality_answers,
             waive_all=waive_all,
+            material_facts=material_facts,
         )
+    profile.extra["sent_raw_text"] = send_raw
+    profile.extra["redaction_note"] = (
+        "本次对外发送包含原文（你已用 ANLI_SEND_RAW_TEXT=1 明确允许）"
+        if send_raw
+        else describe(redactions)
+    )
+    return profile

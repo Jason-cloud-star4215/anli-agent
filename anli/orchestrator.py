@@ -16,7 +16,17 @@ from .agents import (
     AgentContext,
     AdvocacyAgent,
 )
+from .cost import summarize as summarize_cost
 from .events import Event, EventBus
+from .exporter import section_number
+from .planner import (
+    PlanningDecision,
+    decision_line,
+    plan_research,
+    rank_actions,
+    render_actions,
+    should_continue,
+)
 from .evidence_chain import (
     build_evidence_requests,
     evidence_sufficiency,
@@ -188,8 +198,14 @@ class Orchestrator:
                 )
                 return record
 
+            # 检索词由模型参与规划：越界词丢弃、规则词兜底，决策推给前端并留痕
+            research_decision = plan_research(profile, llm=self.llm)
+            self._record_decision(record, task_id, research_decision)
+
             self._stage(record, TaskState.RESEARCHING)
-            research = self._run_research(record)
+            research = self._run_research(
+                record, research_keywords=research_decision.payload.get("keywords")
+            )
             # 引用核验只做一次：同一批核验结果既供挑刺审查判断，也直接进交付物
             record.citations = self._verify_all(research.citations, task_id)
             # 官方库核对结果留档：红队审查与交付物都要用
@@ -236,6 +252,14 @@ class Orchestrator:
             revisions: list[dict] = []
             round_no = 1
             while round_no < self.budget.max_critic_rounds:
+                # 是否再走一轮也交给规划决策：模型判断剩余问题是否影响结论，
+                # 但「没有问题就不继续」「到上限就停」「高危未解决不接受提前结束」是规则说了算
+                round_decision = should_continue(
+                    findings, round_no, self.budget.max_critic_rounds, llm=self.llm
+                )
+                self._record_decision(record, task_id, round_decision)
+                if not round_decision.payload.get("continue"):
+                    break
                 open_items = self._open_findings(findings)
                 if not open_items:
                     break
@@ -349,6 +373,17 @@ class Orchestrator:
             )
             record.extra["intake_source"] = profile.intake_source
 
+            # 行动路径排序：模型只能在既有路径里排（不得新增），决策同样留痕
+            action_decision = rank_actions(profile, record.assessment, llm=self.llm)
+            self._record_decision(record, task_id, action_decision)
+
+            # 成本行放在结论摘要末尾：报告、导出与页面都从这一份内容走，不用三处各写一遍
+            cost = summarize_cost(self.llm)
+            record.extra["cost"] = cost.to_dict()
+            record.extra["summary"] = (
+                str(record.extra.get("summary", "")).rstrip() + "\n\n" + cost.text
+            )
+
             record.artifacts = self._build_artifacts(
                 record,
                 research.bullets,
@@ -358,6 +393,7 @@ class Orchestrator:
                 expectation,
                 strategies,
                 requests,
+                action_decision=action_decision,
             )
 
             # 转人工闸门：金额重大、时效临近、涉人身安全时，
@@ -418,11 +454,14 @@ class Orchestrator:
         return record
 
     # ------------------------------------------------------------------ 各阶段
-    def _run_research(self, record: TaskRecord):
+    def _run_research(self, record: TaskRecord, research_keywords: list[str] | None = None):
         agent = AGENT_FACTORY["researcher"](
             router=self.router, bus=self.bus, budget=self.budget, llm=self.llm
         )
         context = AgentContext(task_id=record.task_id, profile=record.profile)
+        # 检索词来自规划决策；没有就用 Agent 自己的规则兜底
+        if research_keywords:
+            context.extra["research_keywords"] = list(research_keywords)
         # 法条与类案两条检索的并发在 ResearcherAgent 内部完成，
         # 这里不再重复发起一次 case_search（此前那次调用的结果被丢弃，纯属浪费）
         result = agent.run(context)
@@ -658,6 +697,33 @@ class Orchestrator:
         self.bus.emit("stage_changed", record.task_id, {"state": target.value})
         self._checkpoint(record)
 
+    # ------------------------------------------------------------------ 规划决策留痕
+    def _record_decision(self, record: TaskRecord, task_id: str, decision) -> None:
+        """把一次规划决策同时写进交付物留痕与前端事件流。
+
+        模型参与决策必须看得见：否则「智能体自主规划了什么」无法回答，
+        出了问题也追不到是哪一步的决策导致。
+        """
+
+        record.extra.setdefault("planning_decisions", []).append(
+            {"kind": decision.kind, "source": decision.source, "detail": decision.detail}
+        )
+        self.bus.emit(
+            "plan_decided",
+            task_id,
+            {"kind": decision.kind, "source": decision.source, "detail": decision.detail},
+        )
+
+    @staticmethod
+    def _decision_lines(record: TaskRecord, kind: str) -> list[str]:
+        """某一类决策的留痕行（报告与过程流同一句话）。"""
+
+        return [
+            f"· [{item.get('source')}] {item.get('detail')}"
+            for item in (record.extra.get("planning_decisions") or [])
+            if item.get("kind") == kind
+        ]
+
     # ------------------------------------------------------------------ 模型状态
     def _snapshot_llm_usage(self, record: TaskRecord) -> None:
         """把当前累计的模型调用/失败次数写进任务（早退分支也要写，否则会被当成「没调用」）。"""
@@ -711,13 +777,8 @@ class Orchestrator:
 
     def render_report(self, record: TaskRecord) -> str:
         lines: list[str] = []
-        numerals = [
-            "一", "二", "三", "四", "五", "六",
-            "七", "八", "九", "十", "十一", "十二",
-        ]
         for index, artifact in enumerate(record.artifacts):
-            number = numerals[index] if index < len(numerals) else str(index + 1)
-            lines.append(f"===== {number}、{artifact.title} =====")
+            lines.append(f"===== {section_number(index)}、{artifact.title} =====")
             lines.append(artifact.body)
             lines.append("")
         return "\n".join(lines)
@@ -733,6 +794,7 @@ class Orchestrator:
         expectation,
         strategies,
         requests=None,
+        action_decision: PlanningDecision | None = None,
     ) -> list[Artifact]:
         profile = record.profile
         assessment = record.assessment
@@ -1007,6 +1069,12 @@ class Orchestrator:
                     + ["", "类案参照："] + case_lines
                     + ["", "官方真实案例参照（最高人民法院指导性案例缓存）："] + official_lines
                     + ([""] + sample_lines if sample_lines else [])
+                    + (
+                        ["", "检索决策留痕："]
+                        + self._decision_lines(record, "research_keywords")
+                        if self._decision_lines(record, "research_keywords")
+                        else []
+                    )
                 ),
             )
         )
@@ -1103,6 +1171,9 @@ class Orchestrator:
                     or "无"
                 )
             )
+        round_decisions = self._decision_lines(record, "continue_round")
+        if round_decisions:
+            revision_lines += ["", "轮次决策留痕："] + round_decisions
         artifacts.append(
             Artifact(
                 kind="revision",
@@ -1111,18 +1182,16 @@ class Orchestrator:
             )
         )
 
+        # 行动路径：条目文案固定，顺序可由模型按案情排（模型不得新增路径）
+        action_lines = [render_actions(action_decision)]
+        if action_decision is not None:
+            action_lines.append("")
+            action_lines.append("排序依据：" + decision_line(action_decision))
         artifacts.append(
             Artifact(
                 kind="actions",
                 title="维权路径对照",
-                body="\n".join(
-                    [
-                        "1. 协商：成本最低，需准备证据清单与书面主张。",
-                        "2. 投诉/调解：向主管部门或调解组织申请，周期较短。",
-                        "3. 仲裁/诉讼：成本与周期上升，需确认时效与管辖。",
-                        "提示：本方案为参考性质，不构成法律意见，重大金额或时效临近请咨询执业律师。",
-                    ]
-                ),
+                body="\n".join(action_lines),
             )
         )
 

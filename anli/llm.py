@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -85,6 +86,11 @@ class LLMClient:
         self.timeout = timeout
         self.calls = 0
         self.failures = 0
+        # 成本与耗时统计：calls 只数成功，attempts 数实际发出的请求，
+        # seconds 与 usage 用于报告末尾的成本行（见 anli/cost.py）
+        self.attempts = 0
+        self.seconds = 0.0
+        self.usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
     @property
     def available(self) -> bool:
@@ -119,6 +125,8 @@ class LLMClient:
             },
             method="POST",
         )
+        self.attempts += 1
+        started = time.monotonic()
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:  # noqa: S310
                 body = json.loads(response.read().decode("utf-8"))
@@ -127,12 +135,26 @@ class LLMClient:
             raise LLMError(f"模型接口返回 {exc.code}：{detail}") from exc
         except Exception as exc:  # noqa: BLE001
             raise LLMError(f"模型接口调用失败：{exc}") from exc
+        finally:
+            # 失败的调用同样耗时、同样计费风险，必须计入
+            self.seconds += time.monotonic() - started
 
         self.calls += 1
+        self._merge_usage(body.get("usage"))
         try:
             return body["choices"][0]["message"]["content"]
         except (KeyError, IndexError) as exc:
             raise LLMError(f"模型返回结构异常：{str(body)[:200]}") from exc
+
+    def _merge_usage(self, usage: object) -> None:
+        """累加接口返回的 token 用量。服务端不给 usage 时保持为 0，报告里如实写「未提供」。"""
+
+        if not isinstance(usage, dict):
+            return
+        for key in self.usage:
+            value = usage.get(key)
+            if isinstance(value, (int, float)):
+                self.usage[key] += int(value)
 
     # ------------------------------------------------------------------ JSON 调用
     def chat_json(
