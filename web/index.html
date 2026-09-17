@@ -198,6 +198,18 @@
   }
   .empty { color: #93a1b1; font-size: .875rem; text-align: center; padding: 16px 0; }
   .priority-P0 { --bs-badge-color: #fff; }
+
+  /* 打印 / 另存为 PDF：只保留结论摘要、策略建议与完整报告三块，隐藏交互区 */
+  @media print {
+    header.app-header, .col-12.col-lg-3 { display: none !important; }
+    .col-12.col-lg-6 { flex: 0 0 100%; max-width: 100%; }
+    body, .app-shell { height: auto !important; overflow: visible !important; }
+    .col-scroll { height: auto !important; overflow: visible !important; }
+    .col-12.col-lg-6 > .card { display: none !important; }
+    #summaryCard, #strategyCard, #reportCard { display: block !important; }
+    .card { box-shadow: none !important; border-color: #dddddd !important; break-inside: avoid; }
+    .report-section { border-color: #dddddd !important; }
+  }
 </style>
 </head>
 <body class="bg-body-tertiary">
@@ -420,10 +432,13 @@
       </div>
 
       <div class="card d-none" id="reportCard">
-        <div class="card-header d-flex align-items-center">
+        <div class="card-header d-flex align-items-center gap-2">
           <span>完整报告</span>
-          <button type="button" class="btn btn-outline-primary btn-sm ms-auto" id="exportBtn">
-            导出报告 (.md)
+          <button type="button" class="btn btn-outline-primary btn-sm ms-auto" id="exportDocxBtn">
+            导出 Word
+          </button>
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="printBtn">
+            打印 / 存为 PDF
           </button>
         </div>
         <div class="card-body"><div id="report"></div></div>
@@ -2127,10 +2142,17 @@
   $("sampleCriminal").addEventListener("click", function () { fillSample("criminal"); });
   $("sampleBigRisk").addEventListener("click", function () { fillSample("bigrisk"); });
   $("templateBtn").addEventListener("click", insertTemplate);
-  $("exportBtn").addEventListener("click", function () {
+  $("exportDocxBtn").addEventListener("click", function () {
     if (!currentTask) { return; }
-    addLog("导出报告", "正在生成交付物包（Markdown，可直接打印/发送）…", "muted");
-    window.open("/api/tasks/" + currentTask + "/export", "_blank");
+    addLog("导出报告", "正在生成 Word 报告（可直接打印/发送）…", "muted");
+    window.open("/api/tasks/" + currentTask + "/export?format=docx", "_blank");
+  });
+  $("printBtn").addEventListener("click", function () {
+    // 打印前展开全部折叠章节，保证 PDF 里内容完整
+    Array.prototype.slice.call(document.querySelectorAll("details")).forEach(function (item) {
+      item.open = true;
+    });
+    window.print();
   });
   $("run").addEventListener("click", start);
   $("continue").addEventListener("click", continueAnalysis);

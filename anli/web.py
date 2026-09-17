@@ -29,8 +29,9 @@ from .llm_intake import build_profile_llm
 from .models import Role, TaskState
 from .orchestrator import Orchestrator
 from .standards import StandardsStore
-from .exporter import build_markdown_export
-from urllib.parse import quote as _urlquote
+from .exporter import build_markdown_export, export_model_from_record, export_model_from_view, render_markdown
+from .docx_export import build_docx
+from urllib.parse import parse_qs, quote as _urlquote, urlparse
 from .paths import resource_path, user_root
 from .retrieval_flk import LawSourceChecker
 from .regions import DEFAULT_REGION, REGIONS, normalize_region
@@ -502,7 +503,7 @@ class Handler(BaseHTTPRequestHandler):
         elif path.startswith("/api/tasks/") and path.endswith("/stream"):
             self._stream(path.split("/")[3])
         elif path.startswith("/api/tasks/") and path.endswith("/export"):
-            self._export_md(path.split("/")[3])
+            self._export(path.split("/")[3])
         elif path.startswith("/api/tasks/"):
             self._task(path.split("/")[3])
         else:
@@ -720,22 +721,44 @@ class Handler(BaseHTTPRequestHandler):
             except (BrokenPipeError, ConnectionResetError):
                 return
 
-    def _export_md(self, task_id: str) -> None:
-        """导出整份分析报告为 Markdown 附件，可直接打印或发送。"""
+    def _export(self, task_id: str) -> None:
+        """导出整份分析报告（默认 Word，可带 ?format=md 导出 Markdown）。
 
+        服务重启后进程内没有记录：退回检查点里的前端视图重建文档，
+        用户不需要因为"重启过"而重新跑一遍。
+        """
+
+        fmt = parse_qs(urlparse(self.path).query).get("format", ["docx"])[0].lower()
         task = TASKS.get(task_id)
         record = (task or {}).get("record")
-        if record is None:
-            self._json({"code": 404, "msg": "任务不存在或尚未完成"}, status=404)
-            return
-        markdown = build_markdown_export(record, task_id)
-        body = markdown.encode("utf-8")
-        filename = _urlquote(f"案理法律分析报告-{task_id}.md")
+        if record is not None:
+            model = export_model_from_record(record, task_id)
+        else:
+            view = _load_checkpoint(task_id)
+            if view is None:
+                self._json(
+                    {"code": 404, "msg": "任务不存在或尚未完成，请刷新页面后重试"},
+                    status=404,
+                )
+                return
+            model = export_model_from_view(view, task_id)
+
+        if fmt == "md":
+            body = render_markdown(model).encode("utf-8")
+            content_type = "text/markdown; charset=utf-8"
+            extension = "md"
+        else:
+            body = build_docx(model)
+            content_type = (
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            )
+            extension = "docx"
+        filename = _urlquote(f"案理法律分析报告-{task_id}.{extension}")
         self.send_response(200)
-        self.send_header("Content-Type", "text/markdown; charset=utf-8")
+        self.send_header("Content-Type", content_type)
         self.send_header(
             "Content-Disposition",
-            f"attachment; filename=report-{task_id}.md; filename*=UTF-8''{filename}",
+            f"attachment; filename=report-{task_id}.{extension}; filename*=UTF-8''{filename}",
         )
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
