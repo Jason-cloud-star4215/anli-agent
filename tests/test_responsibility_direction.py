@@ -65,6 +65,44 @@ class DirectionTest(unittest.TestCase):
         self.assertIn("不按责任比例", reason)
 
 
+class NegationVariantsTest(unittest.TestCase):
+    """否定说法的变体必须认识全。
+
+    踩过的坑（Qoder 审计提示后复现）：「不承担任何责任」「无任何责任」这类写法
+    在原词表里没有对应项，匹配不到 → 掉进默认值 1.0（对方全责）。
+    原告侧侥幸看着对，**被告侧方向就是反的**——同一类会说反话的错误。
+    """
+
+    VARIANTS = [
+        "交警认定我不承担任何责任。",
+        "交警认定我不承担赔偿责任。",
+        "交警认定我无任何责任。",
+        "交警认定我不担责。",
+        "交警认定我没有任何责任。",
+    ]
+
+    def test_defendant_negation_is_read_as_zero(self):
+        for text in self.VARIANTS:
+            with self.subTest(text=text):
+                profile = build_profile(text, ["事故认定书"], "浙江省", role="defendant")
+                self.assertEqual(profile.responsibility_ratio, 0.0, text)
+                self.assertTrue(profile.extra["claim_has_no_basis"], text)
+
+    def test_claimant_negation_puts_liability_on_the_other_side(self):
+        for text in self.VARIANTS:
+            with self.subTest(text=text):
+                profile = build_profile(text, ["事故认定书"], "浙江省", role="claimant")
+                self.assertEqual(profile.responsibility_ratio, 1.0, text)
+                self.assertFalse(profile.extra["claim_has_no_basis"], text)
+
+    def test_other_side_negation_removes_the_basis(self):
+        profile = build_profile(
+            "交警认定对方不应承担责任。", ["事故认定书"], "浙江省", role="claimant"
+        )
+        self.assertEqual(profile.responsibility_ratio, 0.0)
+        self.assertTrue(profile.extra["claim_has_no_basis"])
+
+
 class NoBasisFlagTest(unittest.TestCase):
     def test_claimant_at_fault_marks_no_basis(self):
         profile = build_profile(
