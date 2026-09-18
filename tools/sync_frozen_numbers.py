@@ -34,7 +34,7 @@ build_time = re.search(r"(\d{2}:\d{2}) 构建", log_head).group(1)
 calls = re.search(r"(\d+) 次调用", log_head).group(1)
 seconds = re.search(r"全程 ([\d.]+) 秒", log_head).group(1)
 run_id = re.search(r"报告编号 \| ([0-9a-f]{12})", report).group(1)
-tokens = re.search(r"([\d,]+) \+ ([\d,]+) tokens", detail)
+tokens = re.search(r"prompt/completion = ([\d,]+)/([\d,]+)", detail)
 in_tok, out_tok = (tokens.group(1), tokens.group(2)) if tokens else ("", "")
 
 print(f"目标口径：build={build_time} calls={calls} seconds={seconds} run={run_id} tokens={in_tok}+{out_tok}")
