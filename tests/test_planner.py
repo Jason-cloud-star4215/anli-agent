@@ -31,13 +31,13 @@ class _FakeLLM:
         self.payload = payload
         self.prompts: list[tuple[str, str]] = []
 
-    def chat_json(self, system: str, user: str, max_tokens: int = 900) -> dict:
+    def chat_json(self, system: str, user: str, max_tokens: int = 900, **kwargs) -> dict:
         self.prompts.append((system, user))
         return dict(self.payload)
 
 
 class _BrokenLLM(_FakeLLM):
-    def chat_json(self, system: str, user: str, max_tokens: int = 900) -> dict:
+    def chat_json(self, system: str, user: str, max_tokens: int = 900, **kwargs) -> dict:
         raise RuntimeError("模型挂了")
 
 

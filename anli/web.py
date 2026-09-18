@@ -135,6 +135,8 @@ def build_view(record, report: str = "", error: str = "") -> dict:
         "llm_failures": record.extra.get("llm_failures", 0) if record else 0,
         "llm_retries": record.extra.get("llm_retries", 0) if record else 0,
         "llm_last_failure": record.extra.get("llm_last_failure", "") if record else "",
+        # 逐次调用明细（环节 / 耗时 / token）：与成本行同源，供留痕核对
+        "llm_call_log": record.extra.get("llm_call_log", []) if record else [],
         # 成本与耗时：结论摘要末尾已含同一句话，这里再给一份结构化数据
         "cost": record.extra.get("cost") or {} if record else {},
         "report": report,

@@ -367,21 +367,15 @@ class Orchestrator:
             record.extra["evidence_sufficiency"] = evidence_sufficiency(profile)
             if requests:
                 record.extra["evidence_request"] = [asdict(item) for item in requests]
-            record.extra["llm_calls"] = getattr(self.llm, "calls", 0) if self.llm else 0
-            record.extra["llm_failures"] = (
-                getattr(self.llm, "failures", 0) if self.llm else 0
-            )
-            record.extra["llm_retries"] = (
-                getattr(self.llm, "retries", 0) if self.llm else 0
-            )
-            record.extra["llm_last_failure"] = (
-                getattr(self.llm, "last_failure", "") if self.llm else ""
-            )
             record.extra["intake_source"] = profile.intake_source
 
             # 行动路径排序：模型只能在既有路径里排（不得新增），决策同样留痕
             action_decision = rank_actions(profile, record.assessment, llm=self.llm)
             self._record_decision(record, task_id, action_decision)
+
+            # 用量快照必须放在最后一次模型调用之后：状态行、成本行与调用明细同源，
+            # 否则会出现「状态行写 12 次、成本行写 13 次」这种同一份报告自相矛盾
+            self._snapshot_llm_usage(record)
 
             # 成本行放在结论摘要末尾：报告、导出与页面都从这一份内容走，不用三处各写一遍
             cost = summarize_cost(self.llm)
@@ -741,6 +735,10 @@ class Orchestrator:
             getattr(self.llm, "last_failure", "") if self.llm else ""
         )
         record.extra["llm_configured"] = self.llm_configured
+        # 逐次调用明细（环节 / 耗时 / token）：与成本行同源，供报告附录与过程留痕核对
+        record.extra["llm_call_log"] = [
+            dict(item) for item in (getattr(self.llm, "call_log", None) or [])
+        ]
 
     def _emit_llm_state_on_stop(self, task_id: str, reason: str) -> None:
         """流程在「调模型之前」结束时，立刻把真实状态推给前端。

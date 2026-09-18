@@ -12,9 +12,11 @@ class StubClient(LLMClient):
         super().__init__(api_key="test-key")
         self.replies = list(replies)
         self.prompts = []
+        self.attempts = []
 
-    def chat(self, system, user, temperature=0.2, max_tokens=1500):  # noqa: D102
+    def chat(self, system, user, temperature=0.2, max_tokens=1500, purpose="", attempt=1):  # noqa: D102
         self.prompts.append(user)
+        self.attempts.append(attempt)
         self.calls += 1
         return self.replies.pop(0) if self.replies else ""
 
@@ -35,6 +37,8 @@ class ChatJsonTest(unittest.TestCase):
         payload = client.chat_json("系统", "用户")
         self.assertEqual(payload["summary"], "完整")
         self.assertEqual(len(client.prompts), 2)
+        # 重试要如实标注为「第 2 次尝试」，供调用明细区分环节与尝试
+        self.assertEqual(client.attempts, [1, 2])
         self.assertEqual(client.failures, 0)
 
     def test_counts_failure_when_all_attempts_broken(self):

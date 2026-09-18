@@ -92,14 +92,25 @@ class BaseAgent:
         self._llm_ok_reported = False
         self._task_id = ""
 
-    def ask_json(self, system: str, user: str, max_tokens: int = 900) -> dict | None:
-        """调用大模型并解析 JSON；不可用时返回 None，由调用方退回规则逻辑。"""
+    def ask_json(
+        self, system: str, user: str, max_tokens: int = 900, purpose: str = ""
+    ) -> dict | None:
+        """调用大模型并解析 JSON；不可用时返回 None，由调用方退回规则逻辑。
+
+        purpose 是这次调用在流程里的环节名；缺省用本智能体的显示名（主张方 / 抗辩方 …），
+        供「模型调用环节表」与过程留痕区分每一次调用。
+        """
 
         if self.llm is None or not getattr(self.llm, "available", False):
             return None
         failures_before = getattr(self.llm, "failures", 0)
         try:
-            payload = self.llm.chat_json(system, user, max_tokens=max_tokens)
+            payload = self.llm.chat_json(
+                system,
+                user,
+                max_tokens=max_tokens,
+                purpose=purpose or getattr(self, "display_name", ""),
+            )
         except Exception:  # noqa: BLE001
             payload = None
         self._report_llm_state(payload, failures_before)

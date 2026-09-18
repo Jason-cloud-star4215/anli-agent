@@ -103,7 +103,9 @@ def plan_research(profile: CaseProfile, llm=None) -> PlanningDecision:
         f"候选词（只能从中选）：{'、'.join(candidates[:60])}"
     )
     try:
-        payload = llm.chat_json(RESEARCH_SYSTEM, prompt, max_tokens=300)
+        payload = llm.chat_json(
+            RESEARCH_SYSTEM, prompt, max_tokens=300, purpose="检索词规划"
+        )
     except Exception:  # noqa: BLE001 - 模型失败必须退回规则版
         return PlanningDecision(
             "research_keywords",
@@ -180,6 +182,7 @@ def should_continue(
             ROUND_SYSTEM,
             f"当前是第 {round_no} 轮（上限 {max_rounds}）。\n未解决的问题：\n{summary}",
             max_tokens=200,
+            purpose="轮次决策",
         )
         verdict = payload.get("continue")
     except Exception:  # noqa: BLE001
@@ -236,7 +239,9 @@ def rank_actions(
         f"缺失材料：{'、'.join(profile.missing_evidence) or '无'}"
     )
     try:
-        payload = llm.chat_json(ORDER_SYSTEM, prompt, max_tokens=200)
+        payload = llm.chat_json(
+            ORDER_SYSTEM, prompt, max_tokens=200, purpose="维权路径排序"
+        )
         raw = [str(item).strip() for item in (payload.get("order") or [])]
         reason = str(payload.get("reason") or "").strip()
     except Exception:  # noqa: BLE001

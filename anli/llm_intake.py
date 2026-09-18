@@ -262,7 +262,11 @@ def build_profile_llm(
     send_raw = os.environ.get(RAW_TEXT_ENV) == "1"
     payload_text, redactions = (description, {}) if send_raw else redact_with_counts(description)
     try:
-        payload = llm.chat_json(_system_prompt(), build_prompt(payload_text, file_names))
+        payload = llm.chat_json(
+            _system_prompt(),
+            build_prompt(payload_text, file_names),
+            purpose="案情理解与结构化抽取",
+        )
         profile = profile_from_payload(
             payload,
             # 报告里保留用户原话（本地产物）；对外发送的只是脱敏版
