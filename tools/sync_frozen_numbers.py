@@ -79,18 +79,21 @@ if old_seconds and old_seconds != seconds:
 if old_build and old_build != build_time:
     RULES.append((f"2026-09-18 {old_build}", f"2026-09-18 {build_time}"))
 
-# tokens 旧值（数据驱动：材料里出现的非当前口径的 "A + B tokens" 组合一律替换为明细口径）
+# tokens 旧值（数据驱动：材料里出现的非当前口径的 "A + B tokens" 组合一律替换为明细口径；
+# 比较时忽略千分位——明细源写 5808，材料惯写 5,808，属同一口径不算旧值）
 if in_tok and out_tok:
-    true_plain, true_spaced = f"{in_tok}+{out_tok}", f"{in_tok} + {out_tok}"
+    def _num(s: str) -> str:
+        return s.replace(",", "")
+
+    true_pair = (_num(in_tok), _num(out_tok))
     stale_tokens: set[str] = set()
     for f in MATERIALS:
         if not f.exists():
             continue
         for m in re.finditer(r"([\d,]+) ?\+ ?([\d,]+) tokens", f.read_text(encoding="utf-8")):
-            for cand in (f"{m.group(1)}+{m.group(2)}", f"{m.group(1)} + {m.group(2)}"):
-                if cand not in (true_plain, true_spaced):
-                    stale_tokens.add(cand)
-    RULES += [(cand, true_spaced if " + " in cand else true_plain) for cand in sorted(stale_tokens)]
+            if (_num(m.group(1)), _num(m.group(2))) != true_pair:
+                stale_tokens.add(m.group(0))
+    RULES += [(cand, f"{in_tok} + {out_tok}") for cand in sorted(stale_tokens)]
 
 # 「X 秒 / Y 次」合并写法（如转储遗留事项里的冻结行；「Y 次 / X 秒」的截图波动口径不受影响）
 for f in MATERIALS:
