@@ -67,7 +67,7 @@ anli-agent/
 │   ├── real_cases.json        实证库：[]（0 条，录入中）
 │   └── standards.json         10 条浙江标准（多年度，含 source_label 与官网核对提示）
 ├── tools/
-│   ├── seal_check.py          封版核对（197 行，全文见 §3.4）
+│   ├── seal_check.py          封版核对（256 行，契约见 §3.4）
 │   ├── selftest.py            53 项端到端自检（332 行，清单见 §3.3）
 │   ├── responsibility_matrix.py  30 格责任矩阵自查（162 行，全文见 §2.8）
 │   ├── capture_llm_log.py     一次运行落盘全部证据（443 行）
@@ -742,7 +742,7 @@ REPORT_MATERIALS = [artifacts/验收证据.txt, artifacts/截图清单.md,
                     artifacts/过程日志_LLM链路.txt, artifacts/导出报告_LLM链路.md]
 ```
 
-判定三类：`[OK]` 一致 / `[改]` 材料数字需跟着改（工作树不干净）/ `[重跑]` 产物落后于**代码与数据的最近一次提交**（`git log -1 --format=%ct -- anli web data app.py 案理.spec`，刻意用"代码/数据提交"而非 HEAD，纯文档提交不会误报）；覆盖项：测试数（pytest --collect-only）、法条库/官方案例/演示样本/实证库条数、两个演示案例的可支持金额与区间与样本构成、`dist/案理.exe` 与 `web/index.html` 与四份素材的新鲜度。退出码 0/1 供脚本调用；实测当前输出 `全部一致`。
+判定三类：`[OK]` 一致 / `[改]` 材料数字需跟着改（工作树不干净）/ `[重跑]` 产物落后于**代码与数据的最近一次提交**（`git log -1 --format=%ct -- anli web data app.py 案理.spec`，刻意用"代码/数据提交"而非 HEAD，纯文档提交不会误报）；覆盖项：测试数（unittest discover，纯标准库，顺带判定是否全绿；pytest 不作依赖）、法条库/官方案例/演示样本/实证库条数、两个演示案例的可支持金额与区间与样本构成、冻结口径回显（读自 artifacts/模型调用明细，与 sync_frozen_numbers 同源）、`dist/案理.exe` 完整性与 `web/index.html` 与四份素材的新鲜度（后两类仅仓库环境做；解压目录无 .git，时间戳类核对自动跳过并如实说明，避免解压改时间戳造成的误报）。退出码 0/1 供脚本调用；实测仓库与解压目录输出均为 `全部一致`。
 
 ---
 
@@ -799,7 +799,7 @@ REPORT_MATERIALS = [artifacts/验收证据.txt, artifacts/截图清单.md,
 7. **图 12（材料解析面板）无实拍截图**：浏览器自动化不支持文件选择器；能力由 31 项 `test_materials.py` 覆盖。提交包该图位已留说明，需人工补一张。
 8. **图片拼接说明**：初赛方案图 4 为 9 条引用面板的 3×3 拼接版式（内容未改动、未美化），图注已注明"拼接展示"。
 9. **`tools/` 内有历史一次性脚本**（`_night_*` 类已清理；现存 `fetch_*`/`probe_*` 为可复跑的数据管线工具）。
-10. **微瑕**：`seal_check` 汇总提示仍写"材料目录有两份（仓库 artifacts/ 与桌面《AI杭州：模拟法庭》）"——桌面旧目录已删，文案待更新；`PROGRESS.md` 未逐轮记录移植（以 git log 为准）。
+10. **微瑕（2026-09-19 已修复其一）**：`seal_check` 汇总提示的目录名已更新为《ai杭州模拟法庭》，且脚本已适配解压环境（unittest 计数、跳过时间戳核对）；`PROGRESS.md` 未逐轮记录移植（以 git log 为准）。
 11. **前端 `index.html` 为构建产物**：改 `index.src.html` 后必须 `python tools/build_web.py`，否则页面与源码不一致（`seal_check` 已加该项检测）。
 12. **`case_from_dict` 忽略未知字段**：未来扩展 `PublishedCase` 字段需同步抓取工具，否则静默丢弃。
 
