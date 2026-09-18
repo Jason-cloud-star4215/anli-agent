@@ -215,6 +215,8 @@ def main() -> None:
                 add_runs(cell.paragraphs[0], text)
                 for run in cell.paragraphs[0].runs:
                     run.bold = True
+                # 表头不能单独留在页尾：与第一条数据行绑定（Word 的 keep with next）
+                cell.paragraphs[0].paragraph_format.keep_with_next = True
             for row in rows:
                 added = table.add_row()
                 added._tr.get_or_add_trPr().append(OxmlElement("w:cantSplit"))
