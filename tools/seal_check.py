@@ -7,6 +7,14 @@
 用法：
     python tools/seal_check.py
 
+两种运行环境（自动识别）：
+    ① 代码仓库内（有 .git）：完整核对——git 状态、测试数、产物新鲜度、冻结口径回显；
+    ② 解压后的程序包（无 .git）：只做该环境能做的核对（测试数、数据规模、演示
+       案例、exe 完整性），git 与时间戳类的新鲜度检查自动跳过并如实说明——
+       解压会改写时间戳，按 mtime 核对必然误报。
+
+测试计数用标准库 unittest（不依赖 pytest——评委机器上通常没有装）。
+
 输出三类结果：
     [OK]   一致
     [改]   需要跟着改（例如测试数变了，材料里的数字要更新）
@@ -16,6 +24,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from datetime import datetime
@@ -27,6 +36,7 @@ if str(ROOT) not in sys.path:
 
 DATA = ROOT / "data"
 ARTIFACTS = ROOT / "artifacts"
+IN_REPO = (ROOT / ".git").exists()
 
 REPORT_MATERIALS = [
     ARTIFACTS / "验收证据.txt",
@@ -56,39 +66,80 @@ def load(path: Path, default):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def count_tests() -> tuple[str, bool]:
+    """用 unittest 清点并执行全部测试，返回 (项数, 是否全绿)；解析失败返回 ("", False)。"""
+    proc = subprocess.run(
+        [sys.executable, "-m", "unittest", "discover", "-s", "tests"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    combined = f"{proc.stdout}\n{proc.stderr}"
+    m = re.search(r"^Ran (\d+) tests?", combined, re.MULTILINE)
+    if m is None:
+        return "", False
+    passed = re.search(r"^OK\b", combined, re.MULTILINE) is not None
+    return m.group(1), passed
+
+
+def echo_frozen_numbers() -> None:
+    """把 artifacts 实测的冻结口径回显出来——材料里的运行数字必须与它一致。
+
+    材料数字的自动同步工具是 tools/sync_frozen_numbers.py，与本函数读同一个文件，
+    两处数字天然同源；这里回显是为了让核对的人一眼看到「以什么为准」。
+    """
+    detail = ARTIFACTS / "模型调用明细_LLM链路.md"
+    if not detail.exists():
+        return
+    text = detail.read_text(encoding="utf-8")
+    calls = re.search(r"view\.llm_calls = (\d+)", text)
+    seconds = re.search(r"cost\.seconds = ([\d.]+)", text)
+    tokens = re.search(r"prompt/completion = ([\d,]+)/([\d,]+)", text)
+    if calls and seconds and tokens:
+        record(
+            "OK",
+            f"冻结口径（读自 artifacts/{detail.name}）：{calls.group(1)} 次调用 / "
+            f"{seconds.group(1)} 秒 / {tokens.group(1)}+{tokens.group(2)} tokens —— "
+            "材料里的运行数字必须与它一致",
+        )
+    else:
+        record("改", "artifacts/模型调用明细 存在但关键口径解析失败，请人工核对")
+
+
 def main() -> int:
     print("=" * 68)
     print("案理 · 封版核对")
     print("=" * 68)
 
     # ---------------------------------------------------------------- 代码状态
-    head = git("log", "-1", "--format=%h %cI %s")
-    dirty = git("status", "--porcelain")
-    # 产物只看「代码与数据」的最近一次改动：纯文档提交不会让 exe 或素材作废
-    code_epoch = float(
-        git("log", "-1", "--format=%ct", "--", "anli", "web", "data", "app.py", "案理.spec") or 0
-    )
-    code_commit = git("log", "-1", "--format=%h %cI %s", "--", "anli", "web", "data", "app.py")
-    record("OK", f"代码：{head}")
-    record("OK", f"最近一次代码/数据改动：{code_commit}")
-    if dirty:
-        record("改", f"工作树有未提交改动 {len(dirty.splitlines())} 处，材料里的数字可能还没对齐")
+    code_epoch = 0.0
+    if IN_REPO:
+        head = git("log", "-1", "--format=%h %cI %s")
+        dirty = git("status", "--porcelain")
+        # 产物只看「代码与数据」的最近一次改动：纯文档提交不会让 exe 或素材作废
+        code_epoch = float(
+            git("log", "-1", "--format=%ct", "--", "anli", "web", "data", "app.py", "案理.spec") or 0
+        )
+        code_commit = git("log", "-1", "--format=%h %cI %s", "--", "anli", "web", "data", "app.py")
+        record("OK", f"代码：{head}")
+        record("OK", f"最近一次代码/数据改动：{code_commit}")
+        if dirty:
+            record("改", f"工作树有未提交改动 {len(dirty.splitlines())} 处，材料里的数字可能还没对齐")
+        else:
+            record("OK", "工作树干净")
     else:
-        record("OK", "工作树干净")
+        record("OK", "运行于解压目录（无 git 仓库）：跳过提交状态与时间戳类新鲜度核对，"
+                     "封版状态以仓库内 seal_check 的输出为准")
 
-    tests = subprocess.run(
-        [sys.executable, "-m", "pytest", "--collect-only", "-q"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-    ).stdout.strip().splitlines()
-    test_count = ""
-    for line in reversed(tests):
-        if "test" in line and ("collected" in line or "selected" in line):
-            test_count = line.split()[0]
-            break
-    record("OK", f"测试：{test_count} 项（材料里写的必须与这个数一致）")
+    count, passed = count_tests()
+    if not count:
+        record("改", "无法自动清点测试数（unittest 输出异常），请手动运行：python -m unittest discover -s tests")
+    elif not passed:
+        record("改", f"测试共 {count} 项但未全绿：python -m unittest discover -s tests")
+    else:
+        record("OK", f"测试：{count} 项，全部通过（材料里写的必须与这个数一致）")
 
     # ---------------------------------------------------------------- 数据
     laws = load(DATA / "laws.seed.json", [])
@@ -143,10 +194,17 @@ def main() -> int:
             f"交付物 {len(record_obj.artifacts)} 项",
         )
 
-    # ---------------------------------------------------------------- 产物新鲜度
+    echo_frozen_numbers()
+
+    # ---------------------------------------------------------------- 产物新鲜度（仅仓库环境）
     exe = ROOT / "dist" / "案理.exe"
     if not exe.exists():
-        record("重跑", "dist/案理.exe 不存在：python -m PyInstaller 案理.spec --noconfirm")
+        if IN_REPO:
+            record("重跑", "dist/案理.exe 不存在：python -m PyInstaller 案理.spec --noconfirm")
+        else:
+            record("改", "dist/案理.exe 不存在：正常解压的程序包应自带该文件，请确认解压完整")
+    elif not IN_REPO:
+        record("OK", "dist/案理.exe 存在（解压完整）")
     elif exe.stat().st_mtime < code_epoch:
         built = datetime.fromtimestamp(exe.stat().st_mtime)
         record(
@@ -157,27 +215,28 @@ def main() -> int:
     else:
         record("OK", "dist/案理.exe 不早于最近一次代码/数据改动")
 
-    src = ROOT / "web" / "index.src.html"
-    built_html = ROOT / "web" / "index.html"
-    if src.exists() and built_html.exists() and built_html.stat().st_mtime < src.stat().st_mtime:
-        record("重跑", "web/index.html 落后于 index.src.html：python tools/build_web.py")
-    else:
-        record("OK", "web/index.html 与源文件同步")
-
-    for material in REPORT_MATERIALS:
-        if not material.exists():
-            record("重跑", f"缺素材：{material.relative_to(ROOT)}")
-            continue
-        mtime = datetime.fromtimestamp(material.stat().st_mtime)
-        code_dt = datetime.fromtimestamp(code_epoch)
-        if mtime < code_dt:
-            record(
-                "重跑",
-                f"{material.name} 生成于 {mtime:%m-%d %H:%M}，早于最近一次代码/数据改动 "
-                f"{code_dt:%m-%d %H:%M}——重新生成后再同步到提交材料目录",
-            )
+    if IN_REPO:
+        src = ROOT / "web" / "index.src.html"
+        built_html = ROOT / "web" / "index.html"
+        if src.exists() and built_html.exists() and built_html.stat().st_mtime < src.stat().st_mtime:
+            record("重跑", "web/index.html 落后于 index.src.html：python tools/build_web.py")
         else:
-            record("OK", f"{material.name} 不早于最近一次代码/数据改动")
+            record("OK", "web/index.html 与源文件同步")
+
+        for material in REPORT_MATERIALS:
+            if not material.exists():
+                record("重跑", f"缺素材：{material.relative_to(ROOT)}")
+                continue
+            mtime = datetime.fromtimestamp(material.stat().st_mtime)
+            code_dt = datetime.fromtimestamp(code_epoch)
+            if mtime < code_dt:
+                record(
+                    "重跑",
+                    f"{material.name} 生成于 {mtime:%m-%d %H:%M}，早于最近一次代码/数据改动 "
+                    f"{code_dt:%m-%d %H:%M}——重新生成后再同步到提交材料目录",
+                )
+            else:
+                record("OK", f"{material.name} 不早于最近一次代码/数据改动")
 
     # ---------------------------------------------------------------- 汇总
     print("-" * 68)
@@ -189,7 +248,7 @@ def main() -> int:
     for index, message in enumerate(to_fix, start=1):
         print(f"  {index}. {message}")
     print()
-    print("提醒：材料目录有两份（仓库 artifacts/ 与桌面上《AI杭州：模拟法庭》里的副本），改完要一起同步。")
+    print("提醒：材料目录有两份（仓库 artifacts/ 与桌面上《ai杭州模拟法庭》里的副本），改完要一起同步。")
     return 1
 
 

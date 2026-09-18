@@ -19,9 +19,11 @@ MATERIALS = [
     PKG / "ZCode_全量知识转储.md",
     PKG / "01_初赛方案" / "初赛方案_全文.md",
     PKG / "02_演示素材" / "截图清单.md",
+    PKG / "02_演示素材" / "DEMO_SCRIPT.md",
     PKG / "04_附录" / "封版检查清单.md",
     PKG / "05_程序包" / "使用说明.md",
     REPO / "ZCode_全量知识转储.md",
+    REPO / "DEMO_SCRIPT.md",
     REPO / "封版检查清单.md",
     REPO / "artifacts" / "截图清单.md",
 ]
@@ -77,11 +79,32 @@ if old_seconds and old_seconds != seconds:
 if old_build and old_build != build_time:
     RULES.append((f"2026-09-18 {old_build}", f"2026-09-18 {build_time}"))
 
+# tokens 旧值（数据驱动：材料里出现的非当前口径的 "A + B tokens" 组合一律替换为明细口径）
+if in_tok and out_tok:
+    true_plain, true_spaced = f"{in_tok}+{out_tok}", f"{in_tok} + {out_tok}"
+    stale_tokens: set[str] = set()
+    for f in MATERIALS:
+        if not f.exists():
+            continue
+        for m in re.finditer(r"([\d,]+) ?\+ ?([\d,]+) tokens", f.read_text(encoding="utf-8")):
+            for cand in (f"{m.group(1)}+{m.group(2)}", f"{m.group(1)} + {m.group(2)}"):
+                if cand not in (true_plain, true_spaced):
+                    stale_tokens.add(cand)
+    RULES += [(cand, true_spaced if " + " in cand else true_plain) for cand in sorted(stale_tokens)]
+
+# 「X 秒 / Y 次」合并写法（如转储遗留事项里的冻结行；「Y 次 / X 秒」的截图波动口径不受影响）
+for f in MATERIALS:
+    if not f.exists():
+        continue
+    for m in re.finditer(r"([\d.]+) 秒 / (\d+) 次", f.read_text(encoding="utf-8")):
+        if (m.group(1), m.group(2)) != (seconds, calls):
+            RULES.append((m.group(0), f"{seconds} 秒 / {calls} 次"))
+
 changed = 0
 for target in MATERIALS:
     if not target.exists():
         continue
-    t = target.read_text(encoding="utf-8")
+    t = target.read_bytes().decode("utf-8")
     before = t
     hits = []
     for old, new in RULES:
@@ -89,7 +112,7 @@ for target in MATERIALS:
             hits.append(old)
             t = t.replace(old, new)
     if t != before:
-        target.write_text(t, encoding="utf-8", newline="\n")
+        target.write_bytes(t.encode("utf-8"))
         changed += 1
         print(f"已更新 {target.name}：{len(hits)} 处")
 print("完成，更新文件数：", changed)
