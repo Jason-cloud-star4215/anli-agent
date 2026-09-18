@@ -126,7 +126,7 @@ def main() -> None:
     run.font.size = Pt(13); run.font.color.rgb = RGBColor(0x44, 0x44, 0x44)
     document.add_paragraph()
     info = document.add_paragraph(); info.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = info.add_run("参赛组别：高校组　|　团队成员：＿＿＿＿（以报名表为准）　|　提交日期：＿＿＿＿")
+    run = info.add_run("参赛组别：高校组　|　团队成员：王铮、郑邦合　|　提交日期：2026.9.19")
     run.font.size = Pt(11)
     document.add_page_break()
 
@@ -153,6 +153,26 @@ def main() -> None:
     while index < len(lines):
         line = lines[index]
         stripped = line.strip()
+
+        if stripped.startswith("【架构图"):
+            image = SHOTS.parent / "01_初赛方案" / "系统架构图.drawio.png"
+            if not image.exists():
+                image = PKG / "01_初赛方案" / "系统架构图.drawio.png"
+            if image.exists():
+                picture = document.add_paragraph()
+                picture.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                add_picture_sized(picture, image, 15.5, None)
+                picture.paragraph_format.keep_with_next = True
+                caption_paragraph = document.add_paragraph()
+                caption_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                run = caption_paragraph.add_run(
+                    "系统架构图：四层结构 —— 用户输入 → 基础设施（23 条法条库 / 浙江标准表 / 类案库 / 证据材料）"
+                    "→ 确定性引擎（逐项认定 → 金额计算 → 引用核验）→ Agent 博弈（主张方 → 抗辩方 → 方案修订 "
+                    "→ 红队复核 → 评估官，按需追加第二轮，上限 2 轮）→ 交付物（13 项，证据不足时另加补证清单）"
+                )
+                run.font.size = Pt(9); run.font.color.rgb = RGBColor(0x55, 0x55, 0x55)
+            index += 1
+            continue
 
         if stripped.startswith("【截图"):
             for prefix, (filename, caption, width_cm, max_h) in IMAGE_MAP.items():
