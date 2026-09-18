@@ -260,11 +260,18 @@
               placeholder="用你自己的话描述：时间、经过、损失、你希望的结果。"></textarea>
 
             <div class="d-flex gap-2 mt-2">
-              <button type="button" class="btn btn-outline-secondary btn-sm w-50" id="sampleCar">车祸示例</button>
-              <button type="button" class="btn btn-outline-secondary btn-sm w-50" id="sampleConsumption">消费维权示例</button>
+              <button type="button" class="btn btn-outline-secondary btn-sm w-50" id="sampleCar">车祸·证据不足</button>
+              <button type="button" class="btn btn-outline-secondary btn-sm w-50" id="sampleCarFull">车祸·证据充足</button>
             </div>
             <div class="d-flex gap-2 mt-2">
+              <button type="button" class="btn btn-outline-secondary btn-sm w-50" id="sampleConsumptionGap">消费·证据不足</button>
+              <button type="button" class="btn btn-outline-secondary btn-sm w-50" id="sampleConsumption">消费·证据充足</button>
+            </div>
+            <div class="d-flex gap-2 mt-2">
+              <button type="button" class="btn btn-outline-secondary btn-sm w-50" id="sampleAtFault">责任在我（对方无责）</button>
               <button type="button" class="btn btn-outline-secondary btn-sm w-50" id="sampleCriminal">刑事案件示例</button>
+            </div>
+            <div class="d-flex gap-2 mt-2">
               <button type="button" class="btn btn-outline-secondary btn-sm w-50" id="sampleBigRisk">大额索赔示例</button>
             </div>
             <div class="form-text mt-1">后两个示例用来看两道闸门：刑事案件会直接拦停，大额索赔会转人工确认。</div>
@@ -584,6 +591,73 @@
       }
     },
     // 超出覆盖范围：演示「刑事案件直接拦停，不出分析结论」（三种身份各一份说法）
+    carFull: {
+      claimant: {
+        expect: 5500,
+        desc: "6月10号我骑电动车被一辆小轿车撞了，交警出了事故认定书，认定对方负全部责任。"
+          + "我门诊治疗花了医疗费3200元，有医疗费发票；误工费1800元，单位开了误工证明，也有工资流水；"
+          + "请护工花了护理费2100元，有护理费发票；打车去医院的交通费300元，有交通费票据。"
+          + "我想要对方一共赔我5500元。",
+        evidence: ["事故认定书", "医疗费票据", "误工证明", "工资流水", "护理费票据", "交通费票据"]
+      },
+      defendant: {
+        expect: 5500,
+        desc: "6月10号我开车与一辆电动车发生碰撞，交警认定我负全部责任。对方索赔5500元，"
+          + "并提供了事故认定书、医疗费发票、误工证明与工资流水、护理费发票、交通费票据。"
+          + "我想知道哪些项目可以核减、我大概要赔多少。",
+        evidence: ["事故认定书"]
+      },
+      judge: {
+        expect: 5500,
+        desc: "原告骑电动车与被告驾驶的小轿车发生碰撞，交警认定被告负全部责任。"
+          + "原告主张医疗费3200元、误工费1800元、护理费2100元、交通费300元，合计7400元，"
+          + "各项均提供了对应票据；被告对护理费的必要性提出异议。",
+        evidence: ["事故认定书"]
+      }
+    },
+    consumptionGap: {
+      claimant: {
+        expect: 11996,
+        desc: "8月1号我在网上买了一部手机，商家客服说保证是全新原装，8月4号收货后发现是翻新机。"
+          + "我有订单截图和客服聊天记录，但下单时没保存商品宣传页面。"
+          + "8月5号申请退款被商家拒绝。手机花了2999元，我想要退一赔三，一共赔我11996元。",
+        evidence: ["订单截图", "聊天记录"]
+      },
+      defendant: {
+        expect: 11996,
+        desc: "买家在我店里买了手机，说客服承诺全新原装但发的是翻新机，要求退一赔三共计11996元，"
+          + "订单金额2999元。买家只有订单截图和客服聊天记录，没有商品宣传页面，也没有官方检测报告。",
+        evidence: ["聊天记录"]
+      },
+      judge: {
+        expect: 11996,
+        desc: "买家主张商家在商品宣传中存在欺诈，要求退还价款并三倍赔偿，合计11996元，商品价款2999元。"
+          + "买家提供订单截图和客服聊天记录，未提供商品宣传页面与官方检测报告。",
+        evidence: ["订单截图"]
+      }
+    },
+    // 责任在我方（对方无责）：索赔缺乏责任基础，用来看结论怎么改口径
+    atFault: {
+      claimant: {
+        expect: 12000,
+        desc: "6月10号我骑电动车撞了一辆小轿车，交警出了事故认定书，认定我负全部责任，对方无责任。"
+          + "我门诊治疗花了医疗费3200元，因为养伤误工费大概1800元，我想要对方一共赔我12000元。",
+        evidence: ["事故认定书", "医疗费票据"]
+      },
+      defendant: {
+        expect: 12000,
+        desc: "对方骑电动车撞了我的车，交警出了事故认定书，认定对方负全部责任，我无责任。"
+          + "现在对方要求我赔医疗费3200元、误工费1800元，一共12000元。",
+        evidence: ["事故认定书"]
+      },
+      judge: {
+        expect: 12000,
+        desc: "原告骑电动车与被告驾驶的小轿车发生碰撞，交警认定原告负全部责任，被告无责任。"
+          + "原告仍主张被告赔偿医疗费3200元、误工费1800元，合计12000元。",
+        evidence: ["事故认定书"]
+      }
+    },
+    // 超出覆盖范围：演示「刑事案件直接拦停，不出分析结论」（三种身份各一份说法）
     criminal: {
       claimant: {
         expect: 0,
@@ -770,7 +844,7 @@
     research: "法条与类案", risk: "风险与漏洞", actions: "维权路径对照",
     calculation: "金额计算说明", revision: "修订说明",
     calculation: "金额计算说明", cross_exam: "质证争点清单",
-    document: "模拟判决书", need_info: "补充信息提示",
+    document: "文书草稿", need_info: "补充信息提示",
     out_of_scope: "超出覆盖范围提示", human_review: "转人工提示"
   };
   var GRADE_LABEL = {
@@ -2216,6 +2290,9 @@
 
   $("sampleCar").addEventListener("click", function () { fillSample("car"); });
   $("sampleConsumption").addEventListener("click", function () { fillSample("consumption"); });
+  $("sampleCarFull").addEventListener("click", function () { fillSample("carFull"); });
+  $("sampleConsumptionGap").addEventListener("click", function () { fillSample("consumptionGap"); });
+  $("sampleAtFault").addEventListener("click", function () { fillSample("atFault"); });
   $("sampleCriminal").addEventListener("click", function () { fillSample("criminal"); });
   $("sampleBigRisk").addEventListener("click", function () { fillSample("bigrisk"); });
   $("templateBtn").addEventListener("click", insertTemplate);

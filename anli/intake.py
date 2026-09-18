@@ -74,12 +74,23 @@ CLAIM_RULES: dict[str, dict[str, dict[str, list[str]]]] = {
     },
 }
 
-RESPONSIBILITY_PATTERNS = [
-    (["全责", "全部责任", "对方全责"], 1.0),
-    (["主要责任", "主责"], 0.7),
-    (["同等责任"], 0.5),
-    (["次要责任", "次责"], 0.3),
+RESPONSIBILITY_LEVELS: list[tuple[tuple[str, ...], float]] = [
+    (("全部责任", "全责"), 1.0),
+    (("主要责任", "主责"), 0.7),
+    (("同等责任",), 0.5),
+    (("次要责任", "次责"), 0.3),
+    (("不承担责任", "不负责任", "没有责任", "无责任", "无责"), 0.0),
 ]
+
+# 说「我负全责」和「对方负全责」是相反的结论，必须看主体。
+# 这里取关键词**前面最近**的称呼：越近越可能是这句话的主语。
+#
+# 但「我」是谁取决于用户选的身份：主张方（原告）说「我」指受害方，
+# 抗辩方（被告）说「我」指被索赔方。所以称谓表按身份分两套。
+CLAIMANT_SELF = ("我方", "我", "本人", "自己", "原告", "受害人", "伤者", "申请人", "买家")
+CLAIMANT_OTHER = ("对方", "被告", "肇事", "侵权人", "车主", "司机", "被申请人", "商家", "平台")
+DEFENDANT_SELF = ("我方", "我", "本人", "自己", "被告", "答辩人", "本公司", "本店")
+DEFENDANT_OTHER = ("对方", "原告", "受害人", "伤者", "申请人", "买家")
 
 # 只有按过错分担责任的案由才谈「责任比例」。
 # 消费维权按退一赔三处理、劳动争议按工资标准处理，都不存在责任比例分摊，
@@ -110,14 +121,111 @@ def classify_cause(text: str) -> str:
     return best if scores[best] > 0 else "一般民事纠纷"
 
 
-def parse_responsibility(text: str, cause: str = "") -> float:
+def parse_responsibility(text: str, cause: str = "", role: str | None = None) -> float:
+    """被告（对方）应承担的责任比例。保留旧签名，内部走方向识别版。"""
+
+    return parse_responsibility_detail(text, cause, role)[0]
+
+
+def _subject_before(text: str, position: int, role: str | None = None, window: int = 10) -> str:
+    """看关键词前面最近的称呼是谁：`self`（我方）/ `other`（对方）/ `""`（没说）。"""
+
+    is_defendant = str(role) in ("defendant", "Role.DEFENDANT")
+    self_hints = DEFENDANT_SELF if is_defendant else CLAIMANT_SELF
+    other_hints = DEFENDANT_OTHER if is_defendant else CLAIMANT_OTHER
+    segment = text[max(0, position - window) : position]
+    subject = ""
+    best_index = -1
+    for hint in self_hints:
+        index = segment.rfind(hint)
+        if index > best_index:
+            best_index, subject = index, "self"
+    for hint in other_hints:
+        index = segment.rfind(hint)
+        if index > best_index:
+            best_index, subject = index, "other"
+    return subject
+
+
+def parse_responsibility_detail(
+    text: str, cause: str = "", role: str | None = None
+) -> tuple[float, str]:
+    """返回 (对方责任比例, 依据说明)。
+
+    这个比例在产品里统一表示「对方（被告）应当承担的比例」，所以要判断主体：
+
+    - 「对方负主要责任」→ 0.7；「我负主要责任」→ 0.3（对方只承担次要责任）；
+    - 「我负全部责任 / 对方无责任」→ 0.0，也就是**向对方索赔没有责任基础**；
+    - 只写程度不写主体时沿用旧口径（按程度取值）。
+
+    以前只认程度不认主体，会把「我负全部责任」算成对方赔 100%——
+    那是把责任判反了，属于会误导用户的严重错误。
+    """
+
     if cause and not responsibility_applies(cause):
         # 该案由不按责任比例分摊，一律按 100% 处理
-        return 1.0
-    for keywords, ratio in RESPONSIBILITY_PATTERNS:
-        if any(keyword in text for keyword in keywords):
-            return ratio
-    return 1.0
+        return 1.0, "该案由不按责任比例分摊，按全额计算"
+
+    is_defendant = str(role) in ("defendant", "Role.DEFENDANT")
+
+    def defendant_share_of(subject: str, ratio: float) -> float:
+        """把「谁承担多大比例」换算成产品统一口径：被告承担多少。"""
+
+        if subject == "self":
+            # 我方 = 原告（主张方）/ 被告（抗辩方）
+            return ratio if is_defendant else round(1.0 - ratio, 2)
+        if subject == "other":
+            return round(1.0 - ratio, 2) if is_defendant else ratio
+        return ratio  # 没写主体：沿用旧口径（按程度取被告比例）
+
+    findings: list[tuple[str, str, float]] = []
+    for keywords, ratio in RESPONSIBILITY_LEVELS:
+        for keyword in keywords:
+            start = text.find(keyword)
+            while start >= 0:
+                subject = _subject_before(text, start, role)
+                findings.append((subject, keyword, defendant_share_of(subject, ratio)))
+                start = text.find(keyword, start + len(keyword))
+
+    if not findings:
+        return 1.0, ""
+
+    explicit = [item for item in findings if item[0]]
+    subject, keyword, share = (explicit or findings)[0]
+    # 说明里用当事人身份写清楚，别让法官视角看到「我方」这种第一人称
+    if is_defendant:
+        self_label, other_label = "我方（被告）", "对方（原告）"
+    elif str(role) in ("judge", "Role.JUDGE"):
+        self_label, other_label = "原告侧", "被告侧"
+    else:
+        self_label, other_label = "我方（原告）", "对方（被告）"
+    if subject == "self":
+        return share, f"按描述，{keyword}由{self_label}承担 → 被告承担 {share:.0%}"
+    if subject == "other":
+        return share, f"按描述，{keyword}由{other_label}承担 → 被告承担 {share:.0%}"
+    return share, f"按描述提到{keyword}，未写清由谁承担，暂按程度取值（被告 {share:.0%}）"
+
+
+def client_share_of(
+    responsibility_ratio: float, cause: str, role: str | None
+) -> tuple[float | None, bool]:
+    """算出「我方承担多少」以及「我方是不是主要责任方」。
+
+    结论摘要要先说哪一头，取决于谁承担主要责任：
+    我方只担次要责任时，重点是「能拿多少」；我方担主要责任时，
+    重点是「对方只赔多少、其余要自己扛」——这两句是完全不同的引导。
+    法官视角没有「我方」，返回 (None, False)。
+    """
+
+    text_role = str(role)
+    if text_role in ("defendant", "Role.DEFENDANT"):
+        share: float | None = responsibility_ratio
+    elif text_role in ("claimant", "Role.CLAIMANT"):
+        share = round(1.0 - responsibility_ratio, 2)
+    else:
+        return None, False
+    majority = responsibility_applies(cause) and share is not None and share > 0.5
+    return share, majority
 
 
 NEGATIONS = ("没有", "没", "无", "未", "缺", "尚未", "还没")
@@ -264,8 +372,14 @@ def build_profile(
     quality_answers: dict[str, list[str]] | None = None,
     waive_all: bool = False,
     material_facts: list | None = None,
+    role: str | None = None,
 ) -> CaseProfile:
-    """把用户原话与上传材料转成结构化案情。"""
+    """把用户原话与上传材料转成结构化案情。
+
+    `role` 决定「我」是谁：主张方（原告）还是抗辩方（被告）。
+    这不只是措辞问题——「我负主要责任」在两种身份下的含义正好相反，
+    解析责任比例时必须知道用户站在哪一边。
+    """
 
     text = description.strip()
     file_names = file_names or []
@@ -324,12 +438,20 @@ def build_profile(
             f"{item.name}：{item.reason}" for item in material_facts if not item.parsed
         ]
 
+    responsibility_ratio, responsibility_basis = parse_responsibility_detail(
+        text, cause, role
+    )
+    # 对方完全不担责（我方全责 / 对方无责任）：索赔缺乏责任基础，
+    # 后面的结论、策略与文书都要据此改口径，不能继续按「能拿多少」讲
+    claim_has_no_basis = responsibility_applies(cause) and responsibility_ratio <= 0.0
+    client_share, client_bears_majority = client_share_of(responsibility_ratio, cause, role)
+
     return CaseProfile(
         summary=text[:60] or "用户未提供案情描述",
         cause=cause,
         description=text,
         region=region,
-        responsibility_ratio=parse_responsibility(text, cause),
+        responsibility_ratio=responsibility_ratio,
         timeline=[],
         disputed_points=_disputed_points(cause, blocked),
         available_evidence=sorted(evidence),
@@ -348,6 +470,11 @@ def build_profile(
             "material_summary": material_summary,
             # 该案由是否适用责任比例（消费维权、劳动争议不适用）
             "responsibility_applies": responsibility_applies(cause),
+            "responsibility_basis": responsibility_basis,
+            "claim_has_no_basis": claim_has_no_basis,
+            # 「我方承担多少」与「我方是不是主要责任方」：结论先讲哪一头看这两个
+            "client_share": client_share,
+            "client_bears_majority": client_bears_majority,
             # 用户明确表示「材料拿不出来，就按现有情况给结论」：
             # 这类参数（误工天数、当地工资标准等）不是证据名称，无法逐个 waive，
             # 只能用这个开关整体放行，否则补证清单永远消不掉。

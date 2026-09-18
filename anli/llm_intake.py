@@ -23,7 +23,9 @@ from .intake import (
     findings_to_profile_parts,
     infer_implied_items,
     infer_evidence_from_filenames,
+    client_share_of,
     parse_responsibility,
+    parse_responsibility_detail,
 )
 from .item_assessment import assess_items, sufficiency
 from .materials import cross_check_amounts, evidence_from_materials, summarize
@@ -92,6 +94,7 @@ def profile_from_payload(
     quality_answers: dict[str, list[str]] | None = None,
     waive_all: bool = False,
     material_facts: list | None = None,
+    role: str | None = None,
 ) -> CaseProfile:
     """把模型输出落回受控结构；越界字段直接丢弃。"""
 
@@ -157,10 +160,19 @@ def profile_from_payload(
     else:
         try:
             ratio_value = float(ratio)
-            if not 0 < ratio_value <= 1:
-                ratio_value = parse_responsibility(description, cause)
+            # 0 是合法值：对方无责任 / 我方全责，就是 0。
+            # 以前写成 `not 0 < value`，等于把「对方无责任」判成需要回退的非法值，
+            # 回退后再按关键词取值，方向就反了。
+            if not 0 <= ratio_value <= 1:
+                ratio_value = parse_responsibility(description, cause, role)
         except (TypeError, ValueError):
-            ratio_value = parse_responsibility(description, cause)
+            ratio_value = parse_responsibility(description, cause, role)
+        # 方向交叉校验：描述里写明了「谁承担什么责任」时，以规则解析为准。
+        # 模型拿到的提示词再怎么强调，也可能把「我负全责」填成 1——
+        # 那是一句会把责任判反的话，宁可信确定性规则。
+        rule_ratio, rule_basis = parse_responsibility_detail(description, cause, role)
+        if "由" in rule_basis and abs(rule_ratio - ratio_value) > 0.01:
+            ratio_value = rule_ratio
 
     expectation = payload.get("expectation")
     try:
@@ -223,6 +235,11 @@ def profile_from_payload(
             "material_facts": [item.to_dict() for item in (material_facts or [])],
             "material_summary": material_summary,
             "responsibility_applies": responsibility_applies(cause),
+            # 责任认定的依据与「索赔有没有责任基础」：结论、策略、文书都要看这个开关
+            "responsibility_basis": parse_responsibility_detail(description, cause, role)[1],
+            "claim_has_no_basis": responsibility_applies(cause) and ratio_value <= 0.0,
+            "client_share": client_share_of(ratio_value, cause, role)[0],
+            "client_bears_majority": client_share_of(ratio_value, cause, role)[1],
             "waive_all": bool(waive_all),
         },
     )
@@ -238,6 +255,7 @@ def build_profile_llm(
     quality_answers: dict[str, list[str]] | None = None,
     waive_all: bool = False,
     material_facts: list | None = None,
+    role: str | None = None,
 ) -> CaseProfile:
     """优先用大模型理解案情，失败则退回规则抽取。
 
@@ -257,6 +275,7 @@ def build_profile_llm(
             quality_answers,
             waive_all=waive_all,
             material_facts=material_facts,
+            role=role,
         )
 
     send_raw = os.environ.get(RAW_TEXT_ENV) == "1"
@@ -278,6 +297,7 @@ def build_profile_llm(
             quality_answers,
             waive_all=waive_all,
             material_facts=material_facts,
+            role=role,
         )
     except Exception:  # noqa: BLE001 - 模型不可用时不能拖垮主流程
         profile = build_profile(
@@ -289,6 +309,7 @@ def build_profile_llm(
             quality_answers,
             waive_all=waive_all,
             material_facts=material_facts,
+            role=role,
         )
     profile.extra["sent_raw_text"] = send_raw
     profile.extra["redaction_note"] = (

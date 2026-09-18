@@ -88,7 +88,13 @@ class ToolRegistry:
 
 
 ROLE_ALLOWLIST: dict[Role, set[str]] = {
-    Role.RESEARCHER: {"law_lookup", "case_search", "law_source_check", "official_case_search"},
+    Role.RESEARCHER: {
+        "law_lookup",
+        "case_search",
+        "law_source_check",
+        "official_case_search",
+        "published_case_search",
+    },
     Role.CLAIMANT: {"law_lookup", "case_search", "calc_limitation", "calc_damages"},
     Role.DEFENDANT: {"law_lookup", "case_search", "calc_limitation", "calc_damages"},
     Role.JUDGE: {"law_lookup", "case_search", "calc_damages"},

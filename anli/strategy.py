@@ -55,6 +55,87 @@ def build_strategies(
     role: Role = Role.CLAIMANT,
 ) -> list[Strategy]:
     strategies: list[Strategy] = []
+    if (profile.extra or {}).get("claim_has_no_basis"):
+        # 责任认定已经把对方摘出去了：这时「补材料抬高金额」是错的方向，
+        # 第一顺位只能是核对认定书本身（复核），其次才是协商与成本控制
+        if role == Role.DEFENDANT:
+            strategies.append(
+                Strategy(
+                    priority="P0",
+                    action="以事故认定书为核心固定「你方不担责」这一抗辩",
+                    reason="按描述责任由对方承担，你方没有赔付基础",
+                    expected="对方的主张缺乏责任基础，原则上无需赔付",
+                    materials=["事故认定书", "行车记录仪或现场照片"],
+                )
+            )
+        elif role == Role.JUDGE:
+            strategies.append(
+                Strategy(
+                    priority="P0",
+                    action="先固定责任认定这一基础事实，再谈损失",
+                    reason="责任由原告一方承担，被告不承担责任",
+                    expected="责任层面已无争议空间，损失认定只在原告内部有意义",
+                    materials=["事故认定书"],
+                )
+            )
+        else:
+            strategies.append(
+                Strategy(
+                    priority="P0",
+                    action="先核对事故认定书本身是否有误，必要时在三日内申请复核",
+                    reason="按描述责任由你方承担、对方无责任：向对方索赔缺乏责任基础，"
+                           "补材料也改变不了这一点",
+                    expected="若认定确有错误并复核改判，索赔才有基础；否则金额再高也难以支持",
+                    materials=["事故认定书", "现场照片", "行车记录仪", "证人联系方式"],
+                )
+            )
+        # 责任基础不成立时，「补材料抬高金额」「向保险公司索赔」「做伤残鉴定」
+        # 这类建议全是误导：这里只留一条成本控制建议
+        if role == Role.CLAIMANT:
+            strategies.append(
+                Strategy(
+                    priority="P1",
+                    action="暂缓起诉，先把成本压住，等责任问题有结论再决定",
+                    reason="责任基础不成立时起诉，诉讼费与时间大概率白花",
+                    expected="避免在没把握的案子上先支出诉讼成本",
+                    materials=["认定书复核结果"],
+                )
+            )
+        elif role == Role.DEFENDANT:
+            strategies.append(
+                Strategy(
+                    priority="P1",
+                    action="对方坚持索赔时，书面回复只讲责任，不进入金额讨价还价",
+                    reason="责任不成立的情况下谈金额，等于承认责任",
+                    expected="把争点固定在责任层面，避免被拖进金额谈判",
+                    materials=["事故认定书", "书面回复记录"],
+                )
+            )
+        return strategies
+    if (profile.extra or {}).get("client_bears_majority"):
+        # 责任比例已定、却由我方担主要责任：先把预期按比例折算，别按全额谈
+        share = profile.extra.get("client_share") or 0.0
+        opponent = round(1.0 - share, 2)
+        if role == Role.CLAIMANT:
+            strategies.append(
+                Strategy(
+                    priority="P0",
+                    action=f"先把索赔预期按责任比例折算：对方只承担 {opponent:.0%}",
+                    reason=f"你方承担 {share:.0%} 责任，按全额报数会在协商和诉讼里反复碰壁",
+                    expected=f"以「损失合计 × {opponent:.0%}」作为谈判与起诉的基准",
+                    materials=["事故认定书"],
+                )
+            )
+        elif role == Role.DEFENDANT:
+            strategies.append(
+                Strategy(
+                    priority="P0",
+                    action=f"接受责任认定（你方承担 {share:.0%}），把力气花在金额与证据上",
+                    reason="责任比例由认定书确定，否认责任的成功率低，逐项质证更实际",
+                    expected="在不改变责任比例的前提下核减对方主张中的无依据部分",
+                    materials=["事故认定书", "病历对照清单", "误工证明与流水"],
+                )
+            )
     strategies += _amount_strategies(profile, assessment, blocked_items, role)
     if limitation_days is not None and limitation_days <= 180:
         strategies.append(
@@ -445,7 +526,71 @@ def render_summary(
     sufficiency_text = f"{assessment.sufficiency:.0%}"
     blocked_text = f"约 {assessment.blocked_amount:.0f} 元"
 
-    if assessment.provisional:
+    no_basis = bool((profile.extra or {}).get("claim_has_no_basis"))
+    basis_note = (profile.extra or {}).get("responsibility_basis") or (
+        "责任认定显示对方不承担责任"
+    )
+    # 我方承担主要责任（对方只占少数）：这一档最决定性的事实是责任分摊，
+    # 不是材料齐不齐——先按比例说清楚「对方只赔多少」，再谈补材料
+    client_share = (profile.extra or {}).get("client_share")
+    client_majority = bool((profile.extra or {}).get("client_bears_majority"))
+    opponent_share = round(1.0 - client_share, 2) if client_share is not None else 1.0
+    evidence_tail = (
+        f"另外，材料目前还不齐（证据充分度 {sufficiency_text}，{blocked_text}缺材料支撑），"
+        "补齐后金额判断会更准。"
+        if assessment.provisional
+        else f"按现有证据与责任比例，可支持{approx(assessment.legal_cap)}；"
+             f"同类案件通常判约 {case_text} 元（样本 {assessment.sample_size} 件）。"
+    )
+
+    if no_basis:
+        # 这不是「材料不齐」而是「没有责任基础」：结论必须说清楚，
+        # 否则用户会以为把材料补齐就能拿到钱，白花诉讼费
+        if role == Role.DEFENDANT:
+            conclusion = "责任认定对你有利：对方的主张缺乏责任基础"
+            numbers = (
+                f"{basis_note}。对方主张 {assessment.expectation:.0f} 元，"
+                "但责任不在你方，原则上无需赔付；对方若起诉，"
+                "事故认定书是你最有力的抗辩。"
+            )
+        elif role == Role.JUDGE:
+            conclusion = "责任认定清晰，可先按认定结论处理"
+            numbers = (
+                f"{basis_note}。标的 {assessment.expectation:.0f} 元，"
+                "但被告不承担责任，原告的请求缺乏责任基础。"
+            )
+        else:
+            conclusion = "按现有材料，对方不承担责任，你的索赔缺乏责任基础"
+            numbers = (
+                f"{basis_note}。这种情况下即使证据齐全，向对方索赔通常也不会得到支持——"
+                "金额不是障碍，责任才是。真正值得做的是核对事故认定书本身："
+                "对认定有异议的，可在收到之日起三日内向上一级公安机关交通管理部门申请复核。"
+            )
+    elif client_majority:
+        if role == Role.DEFENDANT:
+            conclusion = (
+                f"责任认定对你不利：你方承担 {client_share:.0%}，赔付比例高"
+            )
+            numbers = (
+                f"{basis_note}。对方主张 {assessment.expectation:.0f} 元，"
+                f"按 {client_share:.0%} 的赔付比例，可支持{approx(assessment.legal_cap)}；"
+                "抗辩空间主要在金额与证据，不在责任本身——想靠否认责任翻盘，成功率很低。"
+                + evidence_tail
+            )
+        else:
+            conclusion = (
+                f"先看清责任分摊：你负主要责任，对方只按 {opponent_share:.0%} 承担"
+            )
+            numbers = (
+                f"{basis_note}。也就是说，你提出的 {assessment.expectation:.0f} 元里，"
+                f"能向对方主张的部分最多按 {opponent_share:.0%} 折算，"
+                f"其余约 {client_share:.0%} 原则上由你自己承担——这是责任划分的结果，"
+                "不是把材料补齐就能改变的。"
+                f"（把材料全部补齐，可主张的上限约 "
+                f"{potential_cap(profile) * profile.responsibility_ratio:.0f} 元。）"
+                + evidence_tail
+            )
+    elif assessment.provisional:
         # 证据闸门：证据不充分时不下结论性赔付数字，只说明「补齐后可参考多少」
         if role == Role.DEFENDANT:
             conclusion = "对方举证还不充分，现在谈赔付多少为时过早"
@@ -520,11 +665,39 @@ def render_summary(
     gap_lines = []
     for reason in assessment.gap_reasons:
         gap_lines.append(reason)
-    gap = ("主要问题在于：" + "；".join(gap_lines) + "。") if gap_lines else ""
+    if no_basis:
+        # 责任基础问题盖过一切证据问题，别再把「缺材料」列成主要问题
+        gap = {
+            Role.DEFENDANT: "主要问题在于：责任认定对你有利，争点已经不在责任，而在对方的举证能否成立。",
+            Role.JUDGE: "主要问题在于：责任认定显示被告不承担责任，原告请求缺乏责任基础。",
+        }.get(role, "主要问题在于：责任认定对你不利，这是责任基础问题，不是补材料能解决的。")
+    elif client_majority and role != Role.JUDGE:
+        # 责任分摊要排在材料问题前面：它决定了上限，材料只决定能贴近上限多少
+        head = f"责任分摊：{basis_note}。"
+        rest = ("主要问题在于：" + "；".join(gap_lines) + "。") if gap_lines else ""
+        gap = head + rest
+    else:
+        gap = ("主要问题在于：" + "；".join(gap_lines) + "。") if gap_lines else ""
 
     top = strategies[0].action if strategies else "先补齐关键证据"
 
     extra_lines: list[str] = []
+    # 责任分摊对主张方有利时（对方担一半及以上）也要说一句，
+    # 否则「材料不齐」会把「责任这一关已经过了」盖过去
+    ratio_value = profile.responsibility_ratio or 0.0
+    if applies and role == Role.CLAIMANT and ratio_value >= 0.5:
+        if ratio_value >= 1.0:
+            extra_lines.append(
+                "责任认定对你有利：认定书显示对方承担全部责任，赔付不按比例打折。"
+            )
+        elif ratio_value > 0.5:
+            extra_lines.append(
+                f"责任认定对你有利：对方承担 {ratio_value:.0%}，可主张金额按这一份计算。"
+            )
+        else:
+            extra_lines.append(
+                "责任分摊：双方同等责任，可主张金额按对方的 50% 计算。"
+            )
     # 类案口径必须写在结论里：区间来自哪个地区、有没有演示数据，不能藏在附录
     if assessment.sample_size:
         extra_lines.append("类案口径：" + assessment.sample_note + "。")

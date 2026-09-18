@@ -284,6 +284,10 @@ class ResearcherAgent(BaseAgent):
         # 真实官方案例（最高人民法院指导性案例缓存）：只作裁判要点参照，不参与金额区间
         official_cases = self._search_official_cases(context, keywords)
 
+        # 官方发布案例（省高院／最高法典型案例稿）：同样是参照层，
+        # 里面的金额只作旁证，绝不进金额区间
+        published_cases = self._search_published_cases(context, keywords)
+
         # 第二条检索链路：拿命中的法条去官方库（国家法律法规数据库）核对收录情况。
         # 这条只证明「这部法存在、何时公布施行」，不代表条文正文已核验。
         law_sources = self._check_official_sources(context, provisions)
@@ -329,6 +333,7 @@ class ResearcherAgent(BaseAgent):
                 "cases": cases,
                 "law_sources": law_sources,
                 "official_cases": official_cases,
+                "published_cases": published_cases,
             },
         )
 
@@ -369,6 +374,55 @@ class ResearcherAgent(BaseAgent):
             self.emit_delta(
                 context,
                 f"真实官方案例命中 {len(found)} 篇（含案号与来源链接）",
+                kind="summary",
+            )
+        return found
+
+
+    def _search_published_cases(self, context: AgentContext, keywords: list[str]) -> list:
+        """在法院发布的典型案例稿里找同类案件参照。
+
+        这一层补的是「官方案例缓存里一件交通事故都没有」的窟窿；
+        它带责任划分、伤残等级与裁判要旨，但**不是判决书全文**，
+        所以里面的金额只在报告里列出来当旁证，不参与任何金额计算。
+        """
+
+        if "published_case_search" not in self.router.registry.names():
+            return []
+        try:
+            found = self.call_tool(
+                "published_case_search",
+                keywords=list(keywords),
+                case_type=context.profile.cause,
+            )
+        except Exception:  # noqa: BLE001 - 缓存缺失或损坏都不能中断检索
+            return []
+        for index, case in enumerate(found, start=1):
+            self.bus.emit(
+                "retrieval_hit",
+                context.task_id,
+                {
+                    "scope": "case_published",
+                    "index": index,
+                    "total": len(found),
+                    "label": case.label[:60],
+                    "source": case.source_url,
+                    "detail": "；".join(
+                        item
+                        for item in [
+                            case.source_name,
+                            case.region,
+                            f"责任认定：{case.responsibility}" if case.responsibility else "",
+                            f"抓取于 {case.fetched_at[:10]}" if case.fetched_at else "",
+                        ]
+                        if item
+                    ),
+                },
+            )
+        if found:
+            self.emit_delta(
+                context,
+                f"官方发布案例命中 {len(found)} 篇（典型案例稿，非判决书全文，金额只作旁证）",
                 kind="summary",
             )
         return found

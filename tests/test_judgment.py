@@ -60,25 +60,51 @@ class JudgmentTest(unittest.TestCase):
     def judgment_body(self):
         return next(a.body for a in self.record.artifacts if a.kind == "document")
 
-    def test_document_is_mock_judgment(self):
+    def test_claimant_gets_a_party_document_not_a_judgment(self):
+        """主张方拿到的是起诉状草稿，不能出现「本院认为」「判决结果」这类裁判口径。"""
+
         title = next(
             a.title for a in self.record.artifacts if a.kind == "document"
         )
-        self.assertIn("模拟判决书", title)
+        self.assertIn("起诉状", title)
         body = self.judgment_body()
-        self.assertIn("不发生法律效力", body)
-        self.assertIn("三、本院认为", body)
-        self.assertIn("五、判决结果", body)
+        self.assertIn("一、诉讼请求", body)
+        self.assertIn("三、证据清单", body)
+        self.assertIn("不构成法律意见", body)
+        self.assertNotIn("本院认为", body)
+        self.assertNotIn("判决结果", body)
+        self.assertNotIn("驳回原告", body)
 
-    def test_judgment_amount_matches_assessment(self):
+    def test_party_document_amount_matches_assessment(self):
         body = self.judgment_body()
         cap = self.record.assessment.legal_cap
-        self.assertIn(f"{cap:,.0f} 元", body, "判决金额必须与评估的可支持金额一致")
+        self.assertIn(f"{cap:,.0f} 元", body, "文书里的金额必须与评估的可支持金额一致")
 
-    def test_judgment_has_case_reference_section(self):
-        """「本院参考类案」段落必须存在：有 🟢/真实来源案例就引用，没有就诚实声明。"""
-        body = self.judgment_body()
-        self.assertIn("本院参考类案", body)
+    def test_defendant_gets_an_answer_document(self):
+        """抗辩方拿到的是答辩状：逐项质证 + 不出现裁判口径。"""
+
+        from anli.documents import render_defense
+
+        body = render_defense(self.record.profile, self.record.assessment)
+        self.assertIn("民事答辩状（草稿）", body)
+        self.assertIn("一、答辩意见", body)
+        self.assertIn("四、答辩请求", body)
+        self.assertNotIn("判决结果", body)
+        self.assertNotIn("本院认为", body)
+
+    def test_judge_gets_a_simulation_not_a_judgment(self):
+        """法官视角拿到的推演草稿：措辞明确是推演，且只引真实来源类案。"""
+
+        from anli.judgment import render_judgment
+
+        body = render_judgment(self.record.profile, self.record.assessment, [])
+        self.assertIn("不发生法律效力", body)
+        self.assertIn("三、推演意见", body)
+        self.assertIn("五、推演结论", body)
+        self.assertIn("四、类案参照", body)
+        self.assertIn("非审判组织、非裁判文书", body)
+        self.assertNotIn("模拟审判组织", body)
+        self.assertNotIn("判决结果", body)
 
 
 if __name__ == "__main__":

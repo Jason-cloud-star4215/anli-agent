@@ -8,6 +8,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 from .retrieval_flk import LawSourceChecker
+from .published_cases import PublishedCaseStore
 from .stores import CaseStore, LawStore
 from .tools import Tool, ToolRegistry
 
@@ -22,8 +23,26 @@ def build_default_registry(
     law_store: LawStore,
     case_store: CaseStore,
     law_checker: LawSourceChecker | None = None,
+    published_store: PublishedCaseStore | None = None,
 ) -> ToolRegistry:
     registry = ToolRegistry()
+
+    # 官方发布案例（省高院／最高法典型案例稿）：只有真的装了这份缓存才注册，
+    # 否则过程流里会多出一条永远查不到的检索
+    if published_store is not None and len(published_store) > 0:
+        registry.register(
+            Tool(
+                name="published_case_search",
+                description=(
+                    "在法院发布的典型案例稿里检索同类案件参照，返回责任划分、伤残等级与裁判要旨。"
+                    "这些是发布稿而非判决书全文，其中的金额只作旁证，不参与金额区间计算。"
+                ),
+                schema={"keywords": list, "case_type": str},
+                handler=lambda keywords, case_type="": published_store.search(
+                    list(keywords), case_type=case_type
+                ),
+            )
+        )
 
     registry.register(
         Tool(

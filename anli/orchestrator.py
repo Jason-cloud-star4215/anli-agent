@@ -36,6 +36,13 @@ from .item_assessment import STATUS_LABEL
 from .feasibility import build_assessment
 from .cross_exam import build_challenges, render_challenges
 from .judgment import render_judgment
+from .documents import render_document
+from .real_cases import MIN_REAL_SAMPLE
+from .published_cases import (
+    PublishedCaseStore,
+    case_from_dict,
+    render_reference_lines,
+)
 from .standards import StandardsStore
 from .models import (
     Artifact,
@@ -69,6 +76,24 @@ SAFE_ARTIFACT_KINDS = {
 }
 
 
+def sample_tier_line(assessment) -> str:
+    """数据等级与升级路径：区间不是实证样本时，必须说清怎么才能变成实证。
+
+    这是「例子太少」这个问题的诚实答案——不编样本，而是把升级路径摆到用户面前：
+    同一案由录满 MIN_REAL_SAMPLE 条人工核验的真实判决，区间会自动切换。
+    """
+
+    real = max(0, assessment.sample_size - assessment.synthetic_sample_size)
+    if real >= MIN_REAL_SAMPLE:
+        return f"数据等级：实证样本 {real} 件（人工核验，驱动本次区间）"
+    return (
+        f"数据等级：实证样本 {real} 件（不足 {MIN_REAL_SAMPLE} 件），本次区间由演示/官方案例兜底；"
+        f"升级路径：按《实证案例录入指南.md》录入同一案由的真实判决 {MIN_REAL_SAMPLE} 条"
+        "（python tools/cases_cli.py import --file draft.json → 对照判决书原文核对 → "
+        "把 verification 改为 human_verified），本区间会自动改用实证样本。"
+    )
+
+
 class Orchestrator:
     def __init__(
         self,
@@ -80,11 +105,15 @@ class Orchestrator:
         law_checker=None,
         llm_configured: bool | None = None,
         standards_store: StandardsStore | None = None,
+        published_store: PublishedCaseStore | None = None,
     ) -> None:
         self.law_store = law_store
         self.case_store = case_store
         self.standards = standards_store or StandardsStore()
-        self.registry = build_default_registry(law_store, case_store, law_checker)
+        self.published = published_store
+        self.registry = build_default_registry(
+            law_store, case_store, law_checker, published_store
+        )
         self.router = ToolRouter(self.registry)
         self.verifier = CitationVerifier(law_store, case_store)
         self.state_store = state_store or StateStore()
@@ -213,6 +242,8 @@ class Orchestrator:
             record.extra["law_sources"] = [asdict(item) for item in law_sources]
             official_cases = research.payload.get("official_cases") or []
             record.extra["official_cases"] = [asdict(item) for item in official_cases]
+            published_cases = research.payload.get("published_cases") or []
+            record.extra["published_cases"] = [asdict(item) for item in published_cases]
 
             legal_cap = float(sum(profile.claim_items.values()))
             blocked = dict(profile.blocked_items)
@@ -354,14 +385,26 @@ class Orchestrator:
                 role=record.role,
             )
             requests = build_evidence_requests(profile, role)
+            # 责任基础不成立时不再索要材料：补得再齐也改变不了责任认定，
+            # 继续要材料等于暗示「补齐就能拿到钱」，而且会白白把任务卡在待补证
+            if (profile.extra or {}).get("claim_has_no_basis"):
+                requests = []
             summary = render_summary(
                 profile, record.assessment, strategies, role=record.role
             )
             if requests:
-                summary += (
-                    f"\n\n提醒：以上是初步结论。还有 {len(requests)} 项待补充（缺金额或材料），"
-                    "补齐后金额判断会更准，详见下一节。"
-                )
+                if (profile.extra or {}).get("claim_has_no_basis"):
+                    # 责任基础有问题时，别再引导用户「补材料金额就更准」——那是误导
+                    summary += (
+                        "\n\n提醒：以上是初步结论。还有 "
+                        f"{len(requests)} 项材料没到位，但本次的障碍在责任认定而不是材料，"
+                        "详见下一节。"
+                    )
+                else:
+                    summary += (
+                        f"\n\n提醒：以上是初步结论。还有 {len(requests)} 项待补充（缺金额或材料），"
+                        "补齐后金额判断会更准，详见下一节。"
+                    )
             record.extra["strategies"] = strategies
             record.extra["summary"] = summary
             record.extra["evidence_sufficiency"] = evidence_sufficiency(profile)
@@ -842,6 +885,23 @@ class Orchestrator:
             )
         )
 
+        # 文书草稿紧跟策略建议：这是用户真正要拿去用的东西，不能压到报告最后。
+        # 按身份出具——主张方=起诉状、抗辩方=答辩状、法官视角=模拟裁判推演。
+        # 金额只取评估结果，类案只引真实来源案例；无类案时如实声明。
+        document_citations = [
+            c for c in verified if c.source_type == "case" and c.grade == "authoritative"
+        ]
+        document_title, document_body = render_document(
+            profile,
+            assessment,
+            record.role,
+            document_citations,
+            judgment_renderer=render_judgment,
+        )
+        artifacts.append(
+            Artifact(kind="document", title=document_title, body=document_body)
+        )
+
         # 立场分析：同一份材料，三种身份要看的重点不同
         def bullets_of(result) -> list[str]:
             if not result or not result.bullets:
@@ -1001,6 +1061,7 @@ class Orchestrator:
                             region_line,
                             "样本构成：" + assessment.sample_note,
                             nature_line,
+                            sample_tier_line(assessment),
                             likely_line,
                             f"结论：{labels[0]}{feasible}",
                             gate_line,
@@ -1089,6 +1150,22 @@ class Orchestrator:
                 "注意：类案区间使用的是标注为演示数据的样本，两者不能混为一谈。"
             ]
 
+        # 官方发布案例（省高院／最高法典型案例稿）：补的是「官方案例缓存里一件交通事故都没有」
+        # 的窟窿。它们是发布稿不是判决书，所以其中的金额只作旁证列出，不参与任何金额计算。
+        published_lines: list[str] = []
+        raw_published = record.extra.get("published_cases") or []
+        if raw_published:
+            published_lines = render_reference_lines(
+                [case_from_dict(item) for item in raw_published]
+            )
+        published_block: list[str] = []
+        if published_lines:
+            published_block = [
+                "",
+                "官方发布案例参照（省高院／最高法发布的典型案例稿，非判决书全文；"
+                "其中金额只作旁证，不参与上方金额区间与最可能落点的计算）：",
+            ] + published_lines
+
         artifacts.append(
             Artifact(
                 kind="research",
@@ -1108,6 +1185,7 @@ class Orchestrator:
                     ]
                     + case_lines
                     + ["", "官方真实案例参照（最高人民法院指导性案例缓存）："] + official_lines
+                    + published_block
                     + ([""] + sample_lines if sample_lines else [])
                     + (
                         ["", "检索决策留痕："]
@@ -1239,19 +1317,6 @@ class Orchestrator:
             )
         )
 
-        # 模拟判决书：金额只取评估结果，类案只引真实来源案例；无类案时如实声明
-        real_citations = [
-            c
-            for c in verified
-            if c.source_type == "case" and c.grade == "authoritative"
-        ]
-        artifacts.append(
-            Artifact(
-                kind="document",
-                title="模拟判决书（草稿，仅供学习参考）",
-                body=render_judgment(profile, assessment, real_citations),
-            )
-        )
         return artifacts
 
 

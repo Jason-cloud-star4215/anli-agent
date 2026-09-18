@@ -15,6 +15,7 @@ from .llm_intake import build_profile_llm
 from .paths import resource_path, user_root
 from .models import Role
 from .orchestrator import Orchestrator
+from .published_cases import PublishedCaseStore
 from .regions import DEFAULT_REGION, normalize_region
 from .retrieval_flk import LawSourceChecker
 from .scenarios import (

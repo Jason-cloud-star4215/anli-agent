@@ -29,6 +29,7 @@ from .llm_intake import build_profile_llm
 from .materials import load_facts, parse_material
 from .models import Role, TaskState
 from .orchestrator import Orchestrator
+from .published_cases import PublishedCaseStore
 from .standards import StandardsStore
 from .exporter import build_csv_export, export_model_from_record, export_model_from_view, render_markdown
 from .docx_export import build_docx
@@ -195,6 +196,7 @@ def _build_orchestrator(
         law_checker=checker,
         llm_configured=llm_configured,
         standards_store=StandardsStore.load(DATA / "standards.json"),
+        published_store=PublishedCaseStore.load(DATA / "cases.published.json"),
     )
     orchestrator.subscribe(on_event)
     return orchestrator
@@ -353,6 +355,8 @@ def _run_task(
             quality_answers=quality_answers or {},
             waive_all=waive_all,
             material_facts=load_facts(material_facts),
+            # 「我」是谁取决于用户选的身份：责任方向的判断依赖它
+            role=role,
         )
         if skip_reason:
             profile.extra["intake_note"] = skip_reason
