@@ -18,6 +18,7 @@ from .intake import (
     _disputed_points,
     build_profile,
     classify_cause,
+    explicitly_missing_evidence,
     extract_evidence,
     extract_expectation,
     findings_to_profile_parts,
@@ -66,6 +67,7 @@ SYSTEM_PROMPT = """你是法律案情抽取助手，把用户的口语描述整�
 3. 用户上传的文件名视为有材料。
 4. 用户主张「退一赔三」但没说具体金额时，claim_items 里只填商品价款。
 5. 认不出案由时 cause 填「一般民事纠纷」。
+6. 用户原话说某项证据「还没找到 / 还没打 / 不在手上」时，即使前文提到该项目，have_material 也必须填 false。
 """
 
 
@@ -133,6 +135,11 @@ def profile_from_payload(
     strong_text, weak_text = extract_evidence(description)
     strong |= strong_text
     weak |= weak_text - strong
+    # 原话明确说「还没找到 / 还没打」的证据：模型或关键词判定为有材料也否决
+    # （用户真上传的文件不算被否决——实物在手优先于口头否定）
+    missing = explicitly_missing_evidence(description) - files_evidence
+    strong -= missing
+    weak |= missing
     confirmed = {name for name in (confirmed_evidence or []) if name in EVIDENCE_VOCAB}
     strong |= confirmed
     # 上传材料的正文里读到的证据线索（以前只有文件名参与识别）

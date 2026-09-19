@@ -239,6 +239,25 @@ def client_share_of(
 
 
 NEGATIONS = ("没有", "没", "无", "未", "缺", "尚未", "还没")
+# 后置否定：否定词出现在关键词之后（「交通费的票据都还没找到」）。
+# 只认具体短语、不收「没有/没」这类裸否定，避免「票据没有问题」被误伤。
+POST_NEGATIONS = (
+    "还没找到", "没有找到", "未找到", "没找到", "找不到", "找不着",
+    "还没打", "没有打", "未打印",
+    "还没开", "没有开", "未开出",
+    "不在手上", "没在手上", "不在身边", "没在身边",
+    "还没拿到", "没有拿到", "没拿到",
+    "弄丢了", "遗失",
+)
+
+
+def _occurrence_negated(text: str, start: int, end: int) -> bool:
+    """单次关键词命中的否定判定：前 8 字看通用否定词，后 20 字看后置否定短语。"""
+    before = text[max(0, start - 8) : start]
+    after = text[end : end + 20]
+    return any(word in before for word in NEGATIONS) or any(
+        word in after for word in POST_NEGATIONS
+    )
 
 
 def extract_evidence(text: str) -> tuple[set[str], set[str]]:
@@ -246,7 +265,8 @@ def extract_evidence(text: str) -> tuple[set[str], set[str]]:
 
     判定规则：
     - 关键词前后出现「票、证、明、书、图、录」等字样 → 视为有材料；
-    - 关键词前出现「没有、无、缺」等否定词 → 只算口头提及，不算有材料。
+    - 关键词前出现「没有、无、缺」等否定词、或关键词后出现「还没找到、
+      还没打」等后置否定短语 → 只算口头提及，不算有材料。
     """
 
     strong: set[str] = set()
@@ -258,7 +278,7 @@ def extract_evidence(text: str) -> tuple[set[str], set[str]]:
                 end = start + len(keyword)
                 before = text[max(0, start - 8) : start]
                 after = text[end : end + 8]
-                negated = any(word in before for word in NEGATIONS)
+                negated = _occurrence_negated(text, start, end)
                 documentary = any(mark in keyword for mark in DOC_MORPHEMES) or any(
                     mark in after for mark in DOC_MORPHEMES
                 )
@@ -269,6 +289,22 @@ def extract_evidence(text: str) -> tuple[set[str], set[str]]:
                 start = text.find(keyword, end)
     weak -= strong
     return strong, weak
+
+
+def explicitly_missing_evidence(text: str) -> set[str]:
+    """原话里明确说「还没找到 / 还没打」等的证据名，用于否决「有材料」判定。"""
+
+    missing: set[str] = set()
+    for evidence, keywords in EVIDENCE_VOCAB.items():
+        for keyword in keywords:
+            start = text.find(keyword)
+            while start >= 0:
+                end = start + len(keyword)
+                if _occurrence_negated(text, start, end):
+                    missing.add(evidence)
+                    break
+                start = text.find(keyword, end)
+    return missing
 
 
 def infer_evidence_from_filenames(names: list[str]) -> set[str]:

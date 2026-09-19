@@ -53,6 +53,28 @@ def user_text_for_llm(text: str) -> str:
     return redact(text or "")
 
 
+def evidence_brief(profile) -> str:
+    """证据清单按「已持有 / 仅口头提及」分组后喂给模型。
+
+    可用证据列表里混着「真在手上」与「只是口头提到」两项；揉在一起说，
+    质证复核会把「原话说没找到、清单却列有」当成高危矛盾反复报警。
+    分组之后，模型能分清哪些材料真的在手上、哪些还欠着。
+    """
+
+    held: list[str] = []
+    mentioned: list[str] = []
+    for name in profile.available_evidence:
+        source = str(profile.evidence_sources.get(name, ""))
+        if source.startswith("仅口头提及"):
+            mentioned.append(name)
+        else:
+            held.append(name)
+    brief = f"已持有材料：{'、'.join(held) or '无'}"
+    if mentioned:
+        brief += f"；仅口头提及（材料待补，不得视为已持有）：{'、'.join(mentioned)}"
+    return brief
+
+
 def _filter_provisions_by_cause(provisions: list, cause: str) -> list:
     """案由与法条领域隔离：消费维权类条文不进交通事故案，交强险类条文不进消费案。
 
@@ -635,7 +657,7 @@ class AdvocacyAgent(BaseAgent):
             f"案由：{profile.cause}\n"
             f"用户原话：{user_text_for_llm(profile.description or profile.summary)}\n"
             f"责任比例：{profile.responsibility_ratio:.0%}\n"
-            f"现有证据：{'、'.join(profile.available_evidence) or '无'}\n"
+            f"{evidence_brief(profile)}\n"
             f"缺失证据：{'、'.join(profile.missing_evidence) or '无'}\n"
             f"按现有材料可支持的金额（估算，用「约」表述）：约 {context.legal_cap:.0f} 元\n"
             f"{amount_label}\n"
@@ -711,7 +733,7 @@ class JudgeAgent(BaseAgent):
                 f"案由：{profile.cause}\n"
                 f"用户原话：{user_text_for_llm(profile.description or profile.summary)}\n"
                 f"责任比例：{profile.responsibility_ratio:.0%}\n"
-                f"现有证据：{'、'.join(profile.available_evidence) or '无'}\n"
+                f"{evidence_brief(profile)}\n"
                 f"缺失证据：{'、'.join(profile.missing_evidence) or '无'}\n"
                 f"主张金额：{context.legal_cap:.0f} 元\n"
                 '输出 JSON：{"summary": "一句话评估", "bullets": ["中立评估要点"]}'
@@ -796,7 +818,7 @@ class RevisionAgent(BaseAgent):
             (
                 f"案由：{context.profile.cause}\n"
                 f"用户原话：{user_text_for_llm(context.profile.description or context.profile.summary)}\n"
-                f"现有证据：{'、'.join(context.profile.available_evidence) or '无'}\n"
+                f"{evidence_brief(context.profile)}\n"
                 f"缺失证据：{'、'.join(context.profile.missing_evidence) or '无'}\n"
                 f"可支持金额：{context.legal_cap:.0f} 元\n"
                 f"复核意见：\n{listing}\n\n"
@@ -879,7 +901,7 @@ class RedTeamAgent(BaseAgent):
             (
                 f"案由：{context.profile.cause}\n"
                 f"用户原话：{user_text_for_llm(context.profile.description or context.profile.summary)}\n"
-                f"现有证据：{'、'.join(context.profile.available_evidence) or '无'}\n"
+                f"{evidence_brief(context.profile)}\n"
                 f"缺失证据：{'、'.join(context.profile.missing_evidence) or '无'}\n"
                 f"已有发现：{'；'.join(f'{f.category}：{f.detail}' for f in findings) or '无'}\n"
                 '输出 JSON：{"findings": [{"category": "类别", "severity": "low/medium/high", '
