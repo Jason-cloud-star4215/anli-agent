@@ -60,6 +60,49 @@ class ExtractEvidenceTest(unittest.TestCase):
         self.assertEqual(explicitly_missing_evidence("我有医疗费发票和事故认定书"), set())
 
 
+class GenericWordBoundaryTest(unittest.TestCase):
+    """泛词与跨句边界：省略式列举里的「票据」不得把别的证据拖下水。"""
+
+    MIXED = (
+        "6月10号我骑电动车被小轿车撞了，对方主要责任。"
+        "医疗费3200元有医疗费发票；护理费、交通费的票据还没找到。"
+        "我想要对方赔12000元。"
+    )
+
+    def test_generic_word_does_not_veto_other_evidence(self):
+        """「护理费、交通费的票据还没找到」只否决护理/交通，不否决医疗费。"""
+        missing = explicitly_missing_evidence(self.MIXED)
+        self.assertIn("交通费票据", missing)
+        self.assertIn("护理费票据", missing)
+        self.assertNotIn("医疗费票据", missing)
+
+    def test_mixed_statement_still_supports_2240(self):
+        """混合表述端到端：医疗费有发票 → 可支持 2,240，不为 0。"""
+        payload = {
+            "cause": "交通事故人身损害赔偿",
+            "claim_items": {"医疗费": 3200, "护理费": 900, "交通费": 300},
+            "evidence": [
+                {"name": "医疗费票据", "have_material": True},
+                {"name": "护理费票据", "have_material": False},
+                {"name": "交通费票据", "have_material": False},
+            ],
+        }
+        profile = profile_from_payload(payload, self.MIXED, [], region="浙江省")
+        self.assertIn("医疗费", profile.claim_items)
+        self.assertNotIn("医疗费", profile.blocked_items)
+
+    def test_negation_window_stops_at_clause_boundary(self):
+        """后置否定窗口不跨句读：「医疗费发票；护理费票据还没找到」不否决医疗费。"""
+        missing = explicitly_missing_evidence("我有医疗费发票；护理费票据还没找到。")
+        self.assertNotIn("医疗费票据", missing)
+        self.assertIn("护理费票据", missing)
+        # 同小句内仍正常否决
+        self.assertIn(
+            "交通费票据",
+            explicitly_missing_evidence("医疗费的发票还没找到，交通费票据也没有。"),
+        )
+
+
 class LlmVetoTest(unittest.TestCase):
     def test_have_material_is_vetoed_by_user_text(self):
         """模型坚持「交通费票据有材料」，但原话说还没找到 → 必须被否决。"""

@@ -252,12 +252,31 @@ POST_NEGATIONS = (
 
 
 def _occurrence_negated(text: str, start: int, end: int) -> bool:
-    """单次关键词命中的否定判定：前 8 字看通用否定词，后 20 字看后置否定短语。"""
+    """单次关键词命中的否定判定。
+
+    前置：关键词前 8 字内的通用否定词；后置：同一个小句里（跨过句号/分号即截断，
+    否则「医疗费发票；护理费票据还没找到」会把分号前的医疗费也拖下水）出现的
+    后置否定短语。
+    """
     before = text[max(0, start - 8) : start]
+    if any(word in before for word in NEGATIONS):
+        return True
     after = text[end : end + 20]
-    return any(word in before for word in NEGATIONS) or any(
-        word in after for word in POST_NEGATIONS
-    )
+    cut = len(after)
+    for i, ch in enumerate(after):
+        if ch in "。；;！!？?\n\r":
+            cut = i
+            break
+    clause = after[:cut]
+    return any(word in clause for word in POST_NEGATIONS)
+
+
+# 泛词：单独出现时指向不明，不能作为否决依据。
+# 「护理费、交通费的票据还没找到」是省略式列举，其中的「票据」指的是前项
+# 护理费/交通费，不该把词表里同样含「票据」泛词的医疗费票据拖下水。
+GENERIC_EVIDENCE_WORDS = frozenset(
+    {"票据", "发票", "证明", "记录", "流水", "截图", "报告", "凭证", "单据", "材料"}
+)
 
 
 def extract_evidence(text: str) -> tuple[set[str], set[str]]:
@@ -292,11 +311,17 @@ def extract_evidence(text: str) -> tuple[set[str], set[str]]:
 
 
 def explicitly_missing_evidence(text: str) -> set[str]:
-    """原话里明确说「还没找到 / 还没打」等的证据名，用于否决「有材料」判定。"""
+    """原话里明确说「还没找到 / 还没打」等的证据名，用于否决「有材料」判定。
+
+    泛词（票据/发票/…）单独命中不算：省略式列举「护理费、交通费的票据还没
+    找到」里的「票据」指向前面列举的项目，指向不明的泛词不作为否决依据。
+    """
 
     missing: set[str] = set()
     for evidence, keywords in EVIDENCE_VOCAB.items():
         for keyword in keywords:
+            if keyword in GENERIC_EVIDENCE_WORDS:
+                continue
             start = text.find(keyword)
             while start >= 0:
                 end = start + len(keyword)
