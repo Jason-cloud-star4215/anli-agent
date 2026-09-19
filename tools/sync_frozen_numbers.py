@@ -93,7 +93,7 @@ if in_tok and out_tok:
         for m in re.finditer(r"([\d,]+) ?\+ ?([\d,]+) tokens", f.read_text(encoding="utf-8")):
             if (_num(m.group(1)), _num(m.group(2))) != true_pair:
                 stale_tokens.add(m.group(0))
-    RULES += [(cand, f"{in_tok} + {out_tok}") for cand in sorted(stale_tokens)]
+    RULES += [(cand, f"{in_tok:,} + {out_tok:,} tokens") for cand in sorted(stale_tokens)]
 
 # 「X 秒 / Y 次」合并写法（如转储遗留事项里的冻结行；「Y 次 / X 秒」的截图波动口径不受影响）
 for f in MATERIALS:

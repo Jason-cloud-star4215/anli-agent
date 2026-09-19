@@ -28,6 +28,7 @@ function parseArgs(argv) {
     tailSeconds: 6,
     hold: 6,
     frames: "",
+    description: "",
     chrome: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
     ffmpeg: process.env.ANLI_FFMPEG || "ffmpeg",
   };
@@ -146,6 +147,21 @@ async function captureFrames(args) {
 
     await client.send("Page.navigate", { url: args.url });
     await sleep(1200);
+    // 传 --description 时：不用 ?demo 预填，直接把自定义案情填进表单再开录
+    if (args.description) {
+      await client
+        .send("Runtime.evaluate", {
+          expression:
+            "(() => { const d = document.getElementById('desc');" +
+            "d.value = " + JSON.stringify(args.description) + ";" +
+            "d.dispatchEvent(new Event('input', { bubbles: true }));" +
+            "document.getElementById('run').click(); return true; })()",
+          returnByValue: true,
+        })
+        .catch((err) => {
+          throw new Error("填写案情失败：" + err.message);
+        });
+    }
     await client.send("Page.startScreencast", {
       format: "png",
       quality: 90,

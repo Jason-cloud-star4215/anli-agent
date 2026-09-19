@@ -20,11 +20,12 @@ const os = require("node:os");
 
 function parseArgs(argv) {
   const args = {
-    url: "http://127.0.0.1:8765/?demo=car",
+    url: "http://127.0.0.1:8765/",
     out: "artifacts/shots_3x",
     width: 1500,
     height: 1000,
     scale: 3,
+    description: "",
     chrome: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
   };
   for (let i = 2; i < argv.length; i += 1) {
@@ -216,6 +217,18 @@ async function main() {
       width: args.width, height: args.height, deviceScaleFactor: args.scale, mobile: false,
     });
     await client.send("Page.navigate", { url: args.url });
+    await sleep(1200);
+    // 传 --description 时：填自定义案情（与冻结口径同款输入）后开跑
+    if (args.description) {
+      await evalJs(`(() => {
+        const desc = document.getElementById('desc');
+        desc.value = ${JSON.stringify(args.description)};
+        desc.dispatchEvent(new Event('input', { bubbles: true }));
+        document.getElementById('run').click();
+        return true;
+      })()`);
+      await sleep(800);
+    }
 
     // ---------- 任务 A 现场阶段：只拍过程日志（图2/图13上半） ----------
     await waitFor(
