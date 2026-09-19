@@ -20,7 +20,7 @@ const os = require("node:os");
 
 function parseArgs(argv) {
   const args = {
-    url: "http://127.0.0.1:8765/",
+    url: "http://127.0.0.1:8765/?demo=car",
     out: "artifacts/shots_3x",
     width: 1500,
     height: 1000,
@@ -137,7 +137,8 @@ async function main() {
       return { x: r.left + window.scrollX, y: r.top + window.scrollY, w: r.width, h: r.height };
     })()`);
     if (!rect || rect.w < 5 || rect.h < 5) throw new Error("未找到目标元素: " + JSON.stringify(locator).slice(0, 120));
-    return { x: rect.x, y: rect.y, width: rect.w, height: rect.h, scale: 1 };
+    const h = locator.maxH ? Math.min(rect.h, locator.maxH) : rect.h;
+    return { x: rect.x, y: rect.y, width: rect.w, height: h, scale: 1 };
   };
 
   const shot = async (name, clip) => {
@@ -218,6 +219,8 @@ async function main() {
     });
     await client.send("Page.navigate", { url: args.url });
     await sleep(1200);
+    // 日志面板展开：默认 420px 滚动边界会把末行切半，展开后按内容自然高度截取
+    await client.send("Page.evaluate", { expression: "(()=>{const s=document.createElement('style');s.textContent='.log-panel{max-height:none!important;overflow:visible!important;}';document.head.appendChild(s);return true;})()" }).catch(() => {});
     // 传 --description 时：填自定义案情（与冻结口径同款输入）后开跑
     if (args.description) {
       await evalJs(`(() => {
@@ -244,7 +247,7 @@ async function main() {
       return log.scrollTop;
     })()`);
     await sleep(800);
-    await shot("图2_过程日志.png", await clipOf({ selector: "#log" }));
+    await shot("图2_过程日志.png", await clipOf({ selector: "#log", maxH: 640 }));
 
     // ---------- 任务 A 恢复阶段：其余全部 ----------
     await reloadAndRestore();
