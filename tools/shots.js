@@ -240,7 +240,7 @@ async function main() {
 
     await evalJs(`(() => {
       const log = document.getElementById('log');
-      log.scrollTop = log.scrollHeight * 0.42;
+      log.scrollTop = 0;
       return log.scrollTop;
     })()`);
     await sleep(800);
