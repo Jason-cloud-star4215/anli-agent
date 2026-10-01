@@ -658,12 +658,20 @@ class Orchestrator:
 
         for item, info in (record.profile.blocked_items or {}).items():
             amount = float(info.get("amount") or 0)
-            missing = "、".join(info.get("missing") or [])
+            if str(info.get("kind") or "") == "standard":
+                params = "、".join(info.get("params") or []) or "计算参数"
+                detail_text = (
+                    f"{item} {amount:.0f} 元需按法定标准计算，"
+                    f"还缺参数：{params}，暂未计入可支持金额"
+                )
+            else:
+                missing = "、".join(info.get("missing") or []) or "相关材料"
+                detail_text = f"{item} {amount:.0f} 元因缺少 {missing} 未计入可支持金额"
             findings.append(
                 CriticFinding(
                     category="金额未计入",
                     severity=Severity.MEDIUM if amount >= 1000 else Severity.LOW,
-                    detail=f"{item} {amount:.0f} 元因缺少 {missing} 未计入可支持金额",
+                    detail=detail_text,
                     basis="缺证据的赔偿项目不能作为主张上限",
                 )
             )
@@ -1079,7 +1087,7 @@ class Orchestrator:
                 kind="evidence",
                 title="证据清单与补强建议",
                 body="\n".join(
-                    ["已具备："]
+                    ["已提交或提及的证据（括注是否已有材料）："]
                     + [
                         f"  - {item}（{profile.evidence_sources.get(item, '来源待确认')}）"
                         for item in profile.available_evidence

@@ -52,7 +52,10 @@ anli-agent/
 │   ├── feasibility.py         可行性评估 + 证据闸门
 │   ├── strategy.py            策略建议 + 结论摘要
 │   ├── cross_exam.py          结构化质证争点
-│   ├── judgment.py            模拟判决书
+│   ├── judgment.py            裁判推演（法官视角）
+│   ├── documents.py           按身份出具文书：起诉状／答辩状／裁判推演路由
+│   ├── published_cases.py     官方发布案例参照层（省高院/最高法发布稿，金额只作旁证）
+│   ├── cost.py                成本行（没有单价就不猜价格）
 │   ├── exporter.py            报告导出（Markdown）
 │   ├── real_cases.py          实证类案库（仅 human_verified 进流程）
 │   ├── materials.py           上传材料正文解析（按后缀分派，读不到就如实标注）
@@ -70,7 +73,7 @@ anli-agent/
 ├── web/                       前端（index.src.html 为源码，index.html 为构建产物）
 ├── data/                      laws.seed / cases.seed / cases.official / real_cases / standards
 ├── tools/                     构建、抓取、打包、自测、判决书提取
-├── tests/                     27 个测试文件
+├── tests/                     50 个测试文件
 └── dist/                      打包产物（不含密钥与运行数据）
 ```
 
@@ -109,7 +112,7 @@ anli-agent/
 
 ## 8. 常用命令
 
-运行环境：Python 3.12（本机路径 `%LOCALAPPDATA%\Programs\Python\Python312\python.exe`），仅使用标准库。
+运行环境：Python 3.11+（本机实测 3.11.9；打包用 PyInstaller 6.x，建议在干净 venv 里跑，避免全局站点包干扰分析阶段），仅使用标准库。
 
 ```powershell
 # 运行主线演示案例
@@ -134,7 +137,7 @@ python -m unittest discover -s tests -v
 python -m PyInstaller --noconfirm --onefile --console --name 案理 `
   --add-data "web;web" --add-data "data;data" app.py
 
-# 端到端自检（真实 HTTP + 无头浏览器口径，34 项检查）
+# 端到端自检（真实 HTTP + 无头浏览器口径，53 项检查）
 python tools/selftest.py
 
 # 改了前端源码后必须重新构建自包含页面

@@ -147,7 +147,10 @@ def profile_from_payload(
     strong |= material_tags
 
     item_findings = assess_items(cause, amounts, strong, weak, quality_answers)
-    supported, blocked, partial, notes = findings_to_profile_parts(cause, item_findings)
+    # held 只算 strong：weak（仅口头提及 / 明说还没找到）不算已持有
+    supported, blocked, partial, notes = findings_to_profile_parts(
+        cause, item_findings, held=strong
+    )
 
     unquantified = [
         str(item)

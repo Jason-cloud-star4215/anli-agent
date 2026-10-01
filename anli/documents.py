@@ -44,10 +44,21 @@ def _support_sentence(assessment: FeasibilityAssessment | None, blocked: list[st
 
 
 def _claim_lines(profile: CaseProfile) -> list[str]:
+    """诉讼请求的明细：主张过的项目要列全，不能只列已计入的——
+    「合计 12,000 元（明细：仅医疗费）」会让读者以为其他项目没主张过。"""
+
     lines: list[str] = []
     for item, amount in profile.claim_items.items():
         if isinstance(amount, (int, float)):
             lines.append(f"{item} {amount:,.0f} 元")
+        else:
+            lines.append(f"{item}（金额待补充）")
+    for item, info in (profile.blocked_items or {}).items():
+        if item in profile.claim_items:
+            continue
+        amount = info.get("amount")
+        if isinstance(amount, (int, float)) and amount:
+            lines.append(f"{item} {amount:,.0f} 元（待补证后另行主张）")
         else:
             lines.append(f"{item}（金额待补充）")
     return lines

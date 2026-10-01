@@ -16,6 +16,7 @@
     --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
     --mono: "SFMono-Regular", "JetBrains Mono", Consolas, ui-monospace, monospace;
     --header-h: 72px;
+    --shadow-card: 0 1px 2px rgba(16, 24, 40, .04), 0 6px 20px rgba(16, 24, 40, .04);
   }
   body { font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; color: var(--ink); }
   .brand-mark {
@@ -25,7 +26,7 @@
   }
   .card {
     border-color: var(--line); border-radius: var(--radius-lg);
-    box-shadow: 0 1px 2px rgba(16, 24, 40, .04);
+    box-shadow: var(--shadow-card);
   }
   .card-header {
     background: #fff; border-bottom-color: var(--line-soft); font-weight: 600;
@@ -172,7 +173,7 @@
   }
   .stat .label { font-size: .75rem; color: var(--ink-soft); }
   .stat .value {
-    font-family: var(--mono); font-size: 1.25rem; font-weight: 600;
+    font-family: var(--mono); font-size: 1.35rem; font-weight: 700;
     font-variant-numeric: tabular-nums;
   }
   .stat .hint { font-size: .72rem; color: var(--ink-mute); line-height: 1.5; }
@@ -203,7 +204,33 @@
     .card { box-shadow: none !important; border-color: #dddddd !important; break-inside: avoid; }
     .report-section { border-color: #dddddd !important; }
   }
+
+  /* 投屏模式（?present=1）：决赛现场演示用——全局放大 rem 基准 + 关键数字再放大。
+     只改字号与密度，不隐藏任何面板：三栏过程可见是产品语言，评委看的就是它。 */
+  html.present { font-size: 118%; }
+  html.present .stat .value { font-size: 1.8rem; }
+  html.present .stat .label { font-size: .85rem; }
+  html.present .stream-row { font-size: .9rem; }
+  html.present .stream-chip { font-size: .78rem; }
+  html.present .report-section pre { font-size: .98rem; }
+  html.present .chat-msg { font-size: .9rem; }
+  html.present header.app-header::after {
+    content: "投屏模式";
+    margin-left: 4px;
+    background: var(--brand-soft); color: var(--brand);
+    border: 1px solid #d7e3f0; border-radius: 999px;
+    font-size: .78rem; font-weight: 600; padding: 4px 12px;
+    white-space: nowrap;
+  }
 </style>
+<script>
+  /* 投屏模式要在首帧前定下来，避免页面先小字再放大闪一下 */
+  try {
+    if (new URLSearchParams(location.search).get("present") === "1") {
+      document.documentElement.classList.add("present");
+    }
+  } catch (e) { /* 查询参数异常时按普通模式渲染 */ }
+</script>
 </head>
 <body class="bg-body-tertiary">
 

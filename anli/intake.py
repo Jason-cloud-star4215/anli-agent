@@ -411,8 +411,16 @@ def infer_implied_items(cause: str, amounts: dict[str, float], text: str) -> dic
     return amounts
 
 
-def findings_to_profile_parts(cause: str, findings) -> tuple[dict, dict, dict, list[str]]:
-    """把逐项认定结果落回案情结构。"""
+def findings_to_profile_parts(
+    cause: str, findings, held: set[str] | None = None
+) -> tuple[dict, dict, dict, list[str]]:
+    """把逐项认定结果落回案情结构。
+
+    `held` 是用户手上已有（或已提及待上传）的证据集合。`missing` 必须是
+    「required 减去 held」的真缺失差集：把要件全集当缺失清单写进风险提示，
+    会出现「因缺少误工证明未计入」而用户明明已交误工证明的自相矛盾
+    ——主线案例的红队复核真实抓到过这一个问题。
+    """
 
     rules = CLAIM_RULES.get(cause, {})
     supported: dict[str, float] = {}
@@ -425,7 +433,9 @@ def findings_to_profile_parts(cause: str, findings) -> tuple[dict, dict, dict, l
         rule = rules.get(finding.item) or {"strengthen": []}
         blocked[finding.item] = {
             "amount": finding.claimed,
-            "missing": list(finding.required),
+            "missing": [
+                name for name in finding.required if held is None or name not in held
+            ],
             "strengthen": rule.get("strengthen", []),
             "kind": finding.status,
             "standard": finding.standard,
@@ -473,7 +483,10 @@ def build_profile(
         if item not in amounts and any(alias in text for alias in aliases)
     ]
     item_findings = assess_items(cause, amounts, strong, weak, quality_answers)
-    supported, blocked, partial, notes = findings_to_profile_parts(cause, item_findings)
+    # held 只算 strong：weak 是「仅口头提及 / 还没找到」，恰是缺的证据本体
+    supported, blocked, partial, notes = findings_to_profile_parts(
+        cause, item_findings, held=strong
+    )
 
     sources: dict[str, str] = {}
     for item in sorted(evidence):
