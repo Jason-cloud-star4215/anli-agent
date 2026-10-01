@@ -63,7 +63,7 @@ from .scope import (
 )
 from .strategy import approx_range, build_strategies, format_range, render_summary
 from .tools import ToolCall, ToolRouter
-from .tools_builtin import build_default_registry
+from .tools_builtin import build_default_registry, infer_case_date
 
 # 转人工时先给「事实与数字」，行动方案与文书草稿要等用户确认风险之后再给
 SAFE_ARTIFACT_KINDS = {
@@ -372,7 +372,13 @@ class Orchestrator:
             )
             limitation = self.router.call(
                 Role.REDTEAM,
-                ToolCall(tool="calc_limitation", arguments={"case_type": profile.cause}),
+                ToolCall(
+                    tool="calc_limitation",
+                    arguments={
+                        "case_type": profile.cause,
+                        "start_date": infer_case_date(profile.description),
+                    },
+                ),
             )
             limitation_days = (
                 date.fromisoformat(limitation["deadline"]) - date.today()
@@ -699,13 +705,19 @@ class Orchestrator:
 
         limitation = self.router.call(
             Role.REDTEAM,
-            ToolCall(tool="calc_limitation", arguments={"case_type": profile.cause}),
+            ToolCall(
+                tool="calc_limitation",
+                arguments={
+                    "case_type": profile.cause,
+                    "start_date": infer_case_date(profile.description),
+                },
+            ),
         )
         findings.append(
             CriticFinding(
                 category="时效提示",
                 severity=Severity.LOW,
-                detail=f"适用{limitation['rule']}，预计截止 {limitation['deadline']}",
+                detail=f"适用{limitation['rule']}，{limitation['note']}，预计截止 {limitation['deadline']}",
                 basis="内置时效计算工具",
             )
         )
